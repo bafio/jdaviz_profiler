@@ -13,19 +13,19 @@
 - new users would **really** benefit from guidance about which kind of server to use for a given science use-case; profiling will help us find out what's best
 
 ## performance grid dimensions
-- network's download speed (python kernel to client)
-    - at what download speed should we warn users that the performance will be bad / "users will experience best performance with at least X Mbps download"
-    - (5, 10, 100, 1000) Mbps
 - image size
     - [(500, 1000, 10_000, 100_000) pix]^2
 - viewport size
     - [(600, 1000, 2000, 4000) pix]^2
         - (with plugin tray closed)
-- local memory and CPU allocation
 - number of large images loaded simultaneously and WCS-linked
     - (1, 3, 5, 10, 25) images
 - inside/outside of sidecar
 - with and without DQ loaded
+- local memory and CPU allocation
+- network's download speed (python kernel to client)
+    - at what download speed should we warn users that the performance will be bad / "users will experience best performance with at least X Mbps download"
+    - (5, 10, 100, 1000) Mbps
 
 ## Installing
 To install, check out this repository and:
