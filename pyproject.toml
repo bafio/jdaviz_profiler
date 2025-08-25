@@ -7,10 +7,12 @@ authors = [
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
 license = {file = "LICENSE", content-type = "text/plain"}
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "jdaviz",
-    "papermill",
+    "pillow",
+    "playwright",
+    
 ]
 dynamic = ["version"]
 

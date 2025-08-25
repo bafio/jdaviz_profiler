@@ -29,11 +29,11 @@ def build_parameters_values():
     list of dict
         Each dictionary contains a unique combination of parameters.
     """
-    image_pixel_side_values = (500, 1_000, 10_000, 100_000)
-    viewport_pixel_size_values = (600, 1_000, 2_000, 4_000)
-    n_images_values = (1, 3, 5, 10, 25)
-    sidecar_values = (True, False)
-    with_dq_values = (True, False)
+    image_pixel_side_values = (500,)# 1_000, 10_000, 100_000)
+    viewport_pixel_size_values = (600,)# 1_000, 2_000, 4_000)
+    n_images_values = (1,)# 3, 5, 10, 25)
+    sidecar_values = (True,)# False)
+    with_dq_values = (False,)# True)
 
     parameters_values = []
     for image_pixel_side in image_pixel_side_values:
