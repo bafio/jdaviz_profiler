@@ -12,7 +12,7 @@ dependencies = [
     "jdaviz",
     "pillow",
     "playwright",
-    
+    "requests",
 ]
 dynamic = ["version"]
 

@@ -52,6 +52,25 @@ def build_parameters_values():
     return parameters_values
 
 
+def clear_notebook_outputs(notebook: nbformat.NotebookNode) -> nbformat.NotebookNode:
+    """
+    Clear the outputs of all cells in a notebook.
+    Parameters
+    ----------
+    notebook : nbformat.NotebookNode
+        The notebook from which to clear outputs.
+    Returns
+    -------
+    nbformat.NotebookNode
+        The notebook with cleared outputs.
+    """
+    for cell in notebook.cells:
+        if cell.cell_type == "code":
+            cell.outputs = []
+            cell.execution_count = None
+    return notebook
+
+
 def generate_profiler_notebook(template_path: str, parameters_values: dict
 ) -> nbformat.NotebookNode:
     """
@@ -75,6 +94,9 @@ def generate_profiler_notebook(template_path: str, parameters_values: dict
     """
 
     template_nb = nbformat.read(template_path, nbformat.NO_CONVERT)
+
+    template_nb = clear_notebook_outputs(template_nb)
+
     parameters_source = ""
 
     # Modify the template notebook with the provided parameters

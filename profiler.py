@@ -3,17 +3,14 @@
 Script to profile notebooks.
 """
 
-import pdb
-
 import argparse
 import asyncio
-import os
+import json
 import logging
+import requests
 import time
 
-from playwright.sync_api import sync_playwright
-from playwright.async_api import async_playwright
-
+from playwright.async_api import async_playwright, ElementHandle, Page
 
 logger = logging.getLogger(__name__)
 console_handler = logging.StreamHandler()
@@ -22,8 +19,169 @@ console_handler.setFormatter(
 )
 logger.addHandler(console_handler)
 
+ROMAN_CAL_KERNEL_NAME = "roman-cal"
 
-async def profile(url, output_path, headless, wait_after_execute):
+
+async def clear_jupyterlab_sessions(base_url: str, headers: dict) -> None:
+    """
+    Clear all active sessions (notebooks, consoles, terminals) in the JupyterLab instance.
+    """
+    try:
+        # Get a list of all running sessions
+        sessions_url = f"{base_url}/api/sessions"
+        response = requests.get(sessions_url, headers=headers)
+        response.raise_for_status()
+        sessions = response.json()
+
+        if not sessions:
+            logger.info("No active sessions found.")
+            return
+
+        logger.info(f"Found {len(sessions)} active sessions. Shutting them down...")
+
+        # Shut down each session
+        for session in sessions:
+            session_id = session['id']
+            shutdown_url = f"{base_url}/api/sessions/{session_id}"
+            shutdown_response = requests.delete(shutdown_url, headers=headers)
+            shutdown_response.raise_for_status()
+
+            # Print a status message based on the session type
+            if 'kernel' in session and session['kernel']:
+                logger.info(
+                    "Shut down notebook/console session: "
+                    f"{session['path']} (ID: {session_id})"
+                )
+            elif 'terminal' in session:
+                logger.info(f"Shut down terminal session: {session['name']} (ID: {session_id})")
+            else:
+                logger.info(f"Shut down unknown session type (ID: {session_id})")
+
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Error communicating with JupyterLab server: {e}")
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred: {e}")
+
+
+async def restart_kernel(base_url: str, headers: dict, kernel_name: str) -> None:
+    """
+    Restart the kernel for a given kernel name.
+    """
+    try:
+        # Get the list of all kernels
+        kernels_url = f"{base_url}/api/kernels"
+        response = requests.get(kernels_url, headers=headers)
+        response.raise_for_status()
+        kernels = response.json()
+
+        # Find the kernel ID for the given kernel name
+        kernel_id = None
+        for kernel in kernels:
+            if kernel['name'] == kernel_name:
+                kernel_id = kernel['id']
+                break
+
+        if not kernel_id:
+            logger.warning(f"No active kernel found for kernel name: {kernel_name}.")
+            return
+
+        # Restart the kernel
+        restart_url = f"{base_url}/api/kernels/{kernel_id}/restart"
+        restart_response = requests.post(restart_url, headers=headers)
+        restart_response.raise_for_status()
+
+        logger.info(f"Kernel {kernel_name} restarted successfully.")
+
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Error communicating with JupyterLab server: {e}")
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred: {e}")
+
+
+async def upload_notebook(base_url: str, headers: dict, nb_input_path: str) -> None:
+    """
+    Upload the notebook to the JupyterLab instance.
+    """
+    try:
+        notebook_path = nb_input_path.split('/')[-1]  # Extract filename from path
+        upload_url = f"{base_url}/api/contents/{notebook_path}"
+        logger.info(f"Uploading notebook to {upload_url}")
+
+        with open(nb_input_path, 'r', encoding='utf-8') as nb_file:
+            notebook_content = json.load(nb_file)
+
+        payload = {
+            "content": notebook_content,
+            "type": "notebook",
+            "format": "json"
+        }
+
+        response = requests.put(upload_url, headers=headers, json=payload)
+        response.raise_for_status()
+
+        logger.info(f"Notebook uploaded successfully to {upload_url}")
+
+    except FileNotFoundError:
+        logger.exception(f"Notebook file not found: {notebook_path}")
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Error uploading notebook: {e}")
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred: {e}")
+
+
+async def execute_cell(
+        page: Page, cell: ElementHandle, cell_index: int, wait_after_execute: int
+) -> None:
+    """
+    Execute a single cell and wait for its output.
+    """
+    try:
+        await cell.focus()  # Focus on the cell
+        await page.keyboard.press('Shift+Enter')  # Execute the cell
+        logger.info(f"Executing cell {cell_index}")
+
+        start = time.time()
+        output_cells = []
+
+        sleep_time = 1
+        # Wait up to wait_after_execute seconds or until output appears
+        while time.time() - start < wait_after_execute:
+            output_cells = await cell.query_selector_all(
+                ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
+            )
+
+            # wait before checking if output appeared
+            await asyncio.sleep(sleep_time)
+
+            # If we have at least one output, break and don't wait further
+            if len(output_cells):
+                break
+
+        # If no output appeared, log and return
+        if not len(output_cells):
+            logger.info(
+                f"No output appeared for cell {cell_index} after {wait_after_execute} seconds."
+            )
+            return
+
+        # filter to only text outputs
+        output_cells = await output_cells[0].query_selector_all(
+            ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
+        )
+
+        if not len(output_cells):
+            logger.info(f"No text output appeared for cell {cell_index}.")
+            return
+
+        output_txt = await output_cells[0].inner_text()
+
+        logger.info(f"Text output for cell {cell_index}: {output_txt}")
+
+    except Exception as e:
+        logger.exception(f"An error occurred while executing cell {cell_index}: {e}")
+
+
+async def profile_notebook(url: str, headless: str, wait_after_execute: int) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
     """
@@ -40,99 +198,51 @@ async def profile(url, output_path, headless, wait_after_execute):
 
         # Start profiling
         logger.info("Starting profiling...")
-        logger.info("Sleeping 5 seconds to ensure full load...")
-        time.sleep(5)  # Wait a bit to ensure the page is fully loaded
+        sleep_time = 5
+        logger.info(f"Sleeping {sleep_time} seconds to ensure full load...")
+        await asyncio.sleep(sleep_time)  # Wait a bit to ensure the page is fully loaded
         cells = await page.query_selector_all(
             ".jp-WindowedPanel-viewport>.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell"
         )
         logger.info(f"Number of cells in the notebook: {len(cells)}")
 
+        sleep_time = 2
         # Execute each cell and wait for outputs
         for cell_index, cell in enumerate(cells, start=1):
-            await cell.focus()  # Focus on the cell
-            await page.keyboard.press('Shift+Enter')  # Execute the cell
-            logger.info(f"Executing {cell_index} cell")
+            await execute_cell(page, cell, cell_index, wait_after_execute)
 
-            start = time.time()
-            output_cells = []
-
-            # Wait up to wait_after_execute seconds or until output appears
-            while time.time() - start < wait_after_execute:
-                output_cells = await cell.query_selector_all(
-                    ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
-                )
-
-                await asyncio.sleep(2)  # Check every second
-
-                # If we have at least one output, break and don't wait further
-                if len(output_cells):
-                    break
-
-            # If no output appeared, log and continue to next cell
-            if not len(output_cells):
-                logger.info(
-                    f"No output appeared for cell {cell_index} after {wait_after_execute} seconds."
-                )
-                continue
-
-            # filter to only text outputs
-            output_cells = await output_cells[0].query_selector_all(
-                ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
-            )
-
-            if not len(output_cells):
-                logger.info(f"No text output appeared for cell {cell_index}.")
-                continue
-
-            output_txt = await output_cells[0].inner_text()
-
-            logger.info(f"Text output for cell {cell_index}: {output_txt}")
-            logger.info("Sleeping 5 seconds to ensure stability...")
-            time.sleep(5)  # Wait a bit for the next cell to be ready
-
+            logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
+            await asyncio.sleep(sleep_time)  # Wait a bit for the next cell to be ready
 
         logger.info("Profiling completed.")
 
         await context.close()
         await browser.close()
 
-        return
 
-        # Execute all cells in the notebook
-        page.click('data-command="runmenu:run-all"')
+async def profile(
+        url: str, token: str, nb_input_path: str, headless: bool, wait_after_execute: int
+) -> None:
+    """
+    Profile the notebook at the specified URL using Playwright.
+    """
 
-        # Wait for all cells to finish executing
-        page.wait_for_function(
-            """() => {
-                const cells = document.querySelectorAll('.jp-Cell');
-                return Array.from(cells).every(cell =>
-                    cell.classList.contains('jp-mod-executed') ||
-                    cell.classList.contains('jp-mod-error')
-                );
-            }"""
-        )
+    headers = {
+        "Authorization": f"token {token}",
+        "Content-Type": "application/json",
+    }
 
-        # End profiling
-        page.evaluate("performance.mark('endProfiling')")
-        page.evaluate("performance.measure('notebookExecution', 'startProfiling', 'endProfiling')")
+    await clear_jupyterlab_sessions(url, headers)
+    await restart_kernel(url, headers, ROMAN_CAL_KERNEL_NAME)
+    await upload_notebook(url, headers, nb_input_path)
 
-        # Retrieve profiling results
-        measures = page.evaluate("performance.getEntriesByType('measure')")
-        for measure in measures:
-            if measure['name'] == 'notebookExecution':
-                logger.info(f"Notebook execution time: {measure['duration']} ms")
+    notebook_url = f"{url}/lab/tree/{nb_input_path.split('/')[-1]}/?token={token}"
 
-        # Save profiling results to a file
-        output_file = os.path.join(output_path, "profiling_results.txt")
-        with open(output_file, "w") as f:
-            for measure in measures:
-                f.write(f"{measure['name']}: {measure['duration']} ms\n")
-
-        logger.info(f"Profiling results saved to {output_file}")
-
-        context.close()
-        browser.close()
-
+    await profile_notebook(
+        url=notebook_url,
+        headless=headless,
+        wait_after_execute=wait_after_execute
+    )
 
 
 if __name__ == "__main__":
@@ -141,17 +251,29 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--url",
-        help = "The URL hosting the notebook to profile, including any token and notebook path.",
+        help = "The URL of the JupyterLab instance where the notebook is going to be profiled.",
         required = True,
         type = str,
     )
     parser.add_argument(
-        "--output_path",
-        help = "Output path directory - if not specified, this defaults to output_<timestamp>",
-        required = False,
+        "--token",
+        help = "The token to access the JupyterLab instance.",
+        required = True,
         type = str,
-        default = f"output_{time.strftime('%Y-%m-%dT%H-%M-%S')}"
     )
+    parser.add_argument(
+        "--nb_input_path",
+        help = "Path to the input notebook to be profiled.",
+        required = True,
+        type = str,
+    )
+    # parser.add_argument(
+    #     "--output_path",
+    #     help = "Output path directory - if not specified, this defaults to output_<timestamp>",
+    #     required = False,
+    #     type = str,
+    #     default = f"output_{time.strftime('%Y-%m-%dT%H-%M-%S')}"
+    # )
     parser.add_argument(
         "--headless",
         help = "Whether to run in headless mode (default: False).",
@@ -162,10 +284,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--wait_after_execute",
-        help = "Time to wait after executing each cell (in seconds, default: 30).",
+        help = "Time to wait after executing each cell (in seconds, default: 5).",
         required = False,
         type = int,
-        default = 30,
+        default = 5,
     )
     parser.add_argument(
         "--log_level",
@@ -179,20 +301,27 @@ if __name__ == "__main__":
     # Set up logging
     logger.setLevel(args.log_level.upper())
 
-    logger.info(
+    logger.debug(
         "Starting profiler with "
         f"URL: {args.url} -- "
-        f"Output Path: {args.output_path} -- "
+        f"Token: {args.token} -- "
+        f"Input Notebook Path: {args.nb_input_path} -- "
+        # f"Output Path: {args.output_path} -- "
         f"Headless: {args.headless} -- "
         f"Wait After Execute: {args.wait_after_execute} -- "
         f"Log Level: {args.log_level}"
     )
 
-    os.makedirs(args.output_path, exist_ok=True)
+    # os.makedirs(args.output_path, exist_ok=True)
+    # logger.debug(f"Output directory created at: {args.output_path}")
 
-    asyncio.run(profile(
-        url=args.url,
-        output_path=args.output_path,
-        headless=args.headless,
-        wait_after_execute=args.wait_after_execute
-    ))
+    asyncio.run(
+        profile(
+            url=args.url,
+            token=args.token,
+            nb_input_path=args.nb_input_path,
+            # output_path=args.output_path,
+            headless=args.headless,
+            wait_after_execute=args.wait_after_execute
+        )
+    )
