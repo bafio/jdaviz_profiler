@@ -12,19 +12,33 @@ import time
 
 from playwright.async_api import async_playwright, ElementHandle, Page
 
+
+ROMAN_CAL_KERNEL_NAME = "roman-cal"
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default level is INFO
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 logger.addHandler(console_handler)
 
-ROMAN_CAL_KERNEL_NAME = "roman-cal"
-
 
 async def clear_jupyterlab_sessions(base_url: str, headers: dict) -> None:
     """
     Clear all active sessions (notebooks, consoles, terminals) in the JupyterLab instance.
+    Parameters
+    ----------
+    base_url : str
+        The base URL of the JupyterLab instance.
+    headers : dict
+        The headers to use for authentication (e.g., including the token).
+    Raises
+    ------
+    requests.exceptions.RequestException
+        If there is an error communicating with the JupyterLab server.
+    Exception
+        For any other unexpected errors.
     """
     try:
         # Get a list of all running sessions
@@ -59,13 +73,29 @@ async def clear_jupyterlab_sessions(base_url: str, headers: dict) -> None:
 
     except requests.exceptions.RequestException as e:
         logger.exception(f"Error communicating with JupyterLab server: {e}")
+        raise e
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
+        raise e
 
 
 async def restart_kernel(base_url: str, headers: dict, kernel_name: str) -> None:
     """
     Restart the kernel for a given kernel name.
+    Parameters
+    ----------
+    base_url : str
+        The base URL of the JupyterLab instance.
+    headers : dict
+        The headers to use for authentication (e.g., including the token).
+    kernel_name : str
+        The name of the kernel to restart (e.g., 'python3', 'roman-cal').
+    Raises
+    ------
+    requests.exceptions.RequestException
+        If there is an error communicating with the JupyterLab server.
+    Exception
+        For any other unexpected errors.
     """
     try:
         # Get the list of all kernels
@@ -94,13 +124,31 @@ async def restart_kernel(base_url: str, headers: dict, kernel_name: str) -> None
 
     except requests.exceptions.RequestException as e:
         logger.exception(f"Error communicating with JupyterLab server: {e}")
+        raise e
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
+        raise e
 
 
 async def upload_notebook(base_url: str, headers: dict, nb_input_path: str) -> None:
     """
     Upload the notebook to the JupyterLab instance.
+    Parameters
+    ----------
+    base_url : str
+        The base URL of the JupyterLab instance.
+    headers : dict
+        The headers to use for authentication (e.g., including the token).
+    nb_input_path : str
+        The path to the notebook file to be uploaded.
+    Raises
+    ------
+    FileNotFoundError
+        If the notebook file does not exist.
+    requests.exceptions.RequestException
+        If there is an error communicating with the JupyterLab server.
+    Exception
+        For any other unexpected errors.
     """
     try:
         notebook_path = nb_input_path.split('/')[-1]  # Extract filename from path
@@ -121,12 +169,15 @@ async def upload_notebook(base_url: str, headers: dict, nb_input_path: str) -> N
 
         logger.info(f"Notebook uploaded successfully to {upload_url}")
 
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         logger.exception(f"Notebook file not found: {notebook_path}")
+        raise e
     except requests.exceptions.RequestException as e:
         logger.exception(f"Error uploading notebook: {e}")
+        raise e
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
+        raise e
 
 
 async def execute_cell(
@@ -134,6 +185,20 @@ async def execute_cell(
 ) -> None:
     """
     Execute a single cell and wait for its output.
+    Parameters
+    ----------
+    page : Page
+        The Playwright page object.
+    cell : ElementHandle
+        The cell element to be executed.
+    cell_index : int
+        The index of the cell (for logging purposes).
+    wait_after_execute : int
+        Time to wait after executing the cell (in seconds).
+    Raises
+    ------
+    Exception
+        For any unexpected errors during cell execution.
     """
     try:
         await cell.focus()  # Focus on the cell
@@ -184,6 +249,14 @@ async def execute_cell(
 async def profile_notebook(url: str, headless: str, wait_after_execute: int) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
+    Parameters
+    ----------
+    url : str
+        The URL of the notebook to be profiled.
+    headless : bool
+        Whether to run in headless mode.
+    wait_after_execute : int
+        Time to wait after executing each cell (in seconds).
     """
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless)
@@ -221,11 +294,45 @@ async def profile_notebook(url: str, headless: str, wait_after_execute: int) -> 
 
 
 async def profile(
-        url: str, token: str, nb_input_path: str, headless: bool, wait_after_execute: int
+        url: str, token: str, nb_input_path: str, headless: bool, wait_after_execute: int,
+        log_level: str = "INFO"
 ) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
+    Parameters
+    ----------
+    url : str
+        The URL of the JupyterLab instance where the notebook is going to be profiled.
+    token : str
+        The token to access the JupyterLab instance.
+    nb_input_path : str
+        Path to the input notebook to be profiled.
+    headless : bool
+        Whether to run in headless mode.
+    wait_after_execute : int
+        Time to wait after executing each cell (in seconds).
+    log_level : str, optional
+        Set the logging level (default: INFO).
+    Raises
+    ------
+    FileNotFoundError
+        If the notebook file does not exist.
+    requests.exceptions.RequestException
+        If there is an error communicating with the JupyterLab server.
+    Exception
+        For any other unexpected errors.
     """
+    # Set up logging
+    logger.setLevel(log_level.upper())
+    logger.debug(
+        "Starting profiler with "
+        f"URL: {url} -- "
+        f"Token: {token} -- "
+        f"Input Notebook Path: {nb_input_path} -- "
+        f"Headless: {headless} -- "
+        f"Wait After Execute: {wait_after_execute} -- "
+        f"Log Level: {log_level}"
+    )
 
     headers = {
         "Authorization": f"token {token}",
@@ -267,13 +374,6 @@ if __name__ == "__main__":
         required = True,
         type = str,
     )
-    # parser.add_argument(
-    #     "--output_path",
-    #     help = "Output path directory - if not specified, this defaults to output_<timestamp>",
-    #     required = False,
-    #     type = str,
-    #     default = f"output_{time.strftime('%Y-%m-%dT%H-%M-%S')}"
-    # )
     parser.add_argument(
         "--headless",
         help = "Whether to run in headless mode (default: False).",
@@ -296,32 +396,4 @@ if __name__ == "__main__":
         choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    args = parser.parse_args()
-
-    # Set up logging
-    logger.setLevel(args.log_level.upper())
-
-    logger.debug(
-        "Starting profiler with "
-        f"URL: {args.url} -- "
-        f"Token: {args.token} -- "
-        f"Input Notebook Path: {args.nb_input_path} -- "
-        # f"Output Path: {args.output_path} -- "
-        f"Headless: {args.headless} -- "
-        f"Wait After Execute: {args.wait_after_execute} -- "
-        f"Log Level: {args.log_level}"
-    )
-
-    # os.makedirs(args.output_path, exist_ok=True)
-    # logger.debug(f"Output directory created at: {args.output_path}")
-
-    asyncio.run(
-        profile(
-            url=args.url,
-            token=args.token,
-            nb_input_path=args.nb_input_path,
-            # output_path=args.output_path,
-            headless=args.headless,
-            wait_after_execute=args.wait_after_execute
-        )
-    )
+    asyncio.run(profile(**vars(parser.parse_args())))

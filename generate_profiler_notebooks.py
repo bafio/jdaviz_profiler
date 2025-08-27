@@ -13,6 +13,7 @@ import nbformat
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Default level is INFO
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -29,11 +30,11 @@ def build_parameters_values():
     list of dict
         Each dictionary contains a unique combination of parameters.
     """
-    image_pixel_side_values = (500,)# 1_000, 10_000, 100_000)
-    viewport_pixel_size_values = (600,)# 1_000, 2_000, 4_000)
-    n_images_values = (1,)# 3, 5, 10, 25)
-    sidecar_values = (True,)# False)
-    with_dq_values = (False,)# True)
+    image_pixel_side_values = (500, 1_000, 10_000, 100_000)
+    viewport_pixel_size_values = (600, 1_000, 2_000, 4_000)
+    n_images_values = (1, 3, 5, 10, 25)
+    sidecar_values = (True, False)
+    with_dq_values = (False, True)
 
     parameters_values = []
     for image_pixel_side in image_pixel_side_values:
@@ -115,45 +116,38 @@ def generate_profiler_notebook(template_path: str, parameters_values: dict
     return template_nb
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description = "Script that generates the profiler notebooks from a given notebook template."
-    )
-    parser.add_argument(
-        "--template_path",
-        help = "Path to the notebook template file.",
-        required = True,
-        type = str,
-    )
-    parser.add_argument(
-        "--output_dir_path",
-        help="Path to save the generated profiler notebooks.",
-        required=False,
-        type=str,
-    )
-    parser.add_argument(
-        "--log_level",
-        help="Set the logging level (default: INFO).",
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-    )
-
-    args = parser.parse_args()
-
+def generate_profiler_notebooks(
+        template_path: str, output_dir_path: str, log_level: str = "INFO"
+) -> None:
+    """
+    Generate profiler notebooks from a template and save them to the specified directory.
+    Parameters
+    ----------
+    template_path : str
+        Path to the notebook template file.
+    output_dir_path : str
+        Directory where the generated notebooks will be saved.
+    log_level : str, optional
+        Logging level (default is "INFO").
+    Raises
+    ------
+    FileNotFoundError
+        If the template file does not exist or the output directory does not exist.
+    """
     # Set up logging
-    logger.setLevel(args.log_level.upper())
+    logger.setLevel(log_level.upper())
 
     # If no output path is provided, use the default name
-    if not args.output_dir_path:
-        args.output_dir_path = "notebooks"
+    if not output_dir_path:
+        output_dir_path = "notebooks"
 
     current_file_path = os_path.dirname(os_path.abspath(__file__))
 
     # Resolve the template path relative to the current file's directory
-    template_path = os_path.join(current_file_path, args.template_path)
+    template_path = os_path.join(current_file_path, template_path)
 
     # Resolve the output path relative to the current file's directory
-    output_dir_path = os_path.join(current_file_path, args.output_dir_path)
+    output_dir_path = os_path.join(current_file_path, output_dir_path)
 
     # Check if the template file exists
     if not os_path.isfile(template_path):
@@ -207,3 +201,29 @@ if __name__ == "__main__":
 
     logger.info(f"Total notebooks generated: {nb_generated_counter}")
     logger.info("Profiler notebooks generation completed.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description = "Script that generates the profiler notebooks from a given notebook template."
+    )
+    parser.add_argument(
+        "--template_path",
+        help = "Path to the notebook template file.",
+        required = True,
+        type = str,
+    )
+    parser.add_argument(
+        "--output_dir_path",
+        help="Path to save the generated profiler notebooks.",
+        required=False,
+        type=str,
+    )
+    parser.add_argument(
+        "--log_level",
+        help="Set the logging level (default: INFO).",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
+
+    generate_profiler_notebooks(**vars(parser.parse_args()))
