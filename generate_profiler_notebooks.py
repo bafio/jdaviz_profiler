@@ -118,7 +118,7 @@ def generate_profiler_notebook(template_path: str, parameters_values: dict
 
 def generate_profiler_notebooks(
         template_path: str, output_dir_path: str, log_level: str = "INFO"
-) -> None:
+) -> list[str]:
     """
     Generate profiler notebooks from a template and save them to the specified directory.
     Parameters
@@ -136,10 +136,6 @@ def generate_profiler_notebooks(
     """
     # Set up logging
     logger.setLevel(log_level.upper())
-
-    # If no output path is provided, use the default name
-    if not output_dir_path:
-        output_dir_path = "notebooks"
 
     current_file_path = os_path.dirname(os_path.abspath(__file__))
 
@@ -167,7 +163,7 @@ def generate_profiler_notebooks(
     # Iterate over each combination of parameters and generate the notebook
     logger.info("Generating profiler notebooks...")
 
-    nb_generated_counter = 0
+    output_paths = []
     for parameters_values in parameters_combinations:
         # Create the output path for the generated notebook
         nb_filename = (
@@ -196,11 +192,12 @@ def generate_profiler_notebooks(
 
         # Write the modified notebook to the output path
         nbformat.write(parametrized_nb, output_path)
+        output_paths.append(output_path)
 
-        nb_generated_counter += 1
-
-    logger.info(f"Total notebooks generated: {nb_generated_counter}")
+    logger.info(f"Total notebooks generated: {len(output_paths)}")
     logger.info("Profiler notebooks generation completed.")
+
+    return output_paths
 
 
 if __name__ == "__main__":
@@ -218,6 +215,7 @@ if __name__ == "__main__":
         help="Path to save the generated profiler notebooks.",
         required=False,
         type=str,
+        default="notebooks",
     )
     parser.add_argument(
         "--log_level",

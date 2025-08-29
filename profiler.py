@@ -180,6 +180,42 @@ async def upload_notebook(base_url: str, headers: dict, nb_input_path: str) -> N
         raise e
 
 
+async def delete_notebook(base_url: str, headers: dict, nb_input_path: str) -> None:
+    """
+    Delete the notebook from the JupyterLab instance.
+    Parameters
+    ----------
+    base_url : str
+        The base URL of the JupyterLab instance.
+    headers : dict
+        The headers to use for authentication (e.g., including the token).
+    nb_input_path : str
+        The path to the notebook file to be deleted.
+    Raises
+    ------
+    requests.exceptions.RequestException
+        If there is an error communicating with the JupyterLab server.
+    Exception
+        For any other unexpected errors.
+    """
+    try:
+        notebook_path = nb_input_path.split('/')[-1]  # Extract filename from path
+        delete_url = f"{base_url}/api/contents/{notebook_path}"
+        logger.info(f"Deleting notebook at {delete_url}")
+
+        response = requests.delete(delete_url, headers=headers)
+        response.raise_for_status()
+
+        logger.info(f"Notebook deleted successfully from {delete_url}")
+
+    except requests.exceptions.RequestException as e:
+        logger.exception(f"Error deleting notebook: {e}")
+        raise e
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred: {e}")
+        raise e
+
+
 async def execute_cell(
         page: Page, cell: ElementHandle, cell_index: int, wait_after_execute: int
 ) -> None:
@@ -350,6 +386,8 @@ async def profile(
         headless=headless,
         wait_after_execute=wait_after_execute
     )
+
+    await delete_notebook(url, headers, nb_input_path)
 
 
 if __name__ == "__main__":
