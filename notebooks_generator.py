@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Script to generate the profiler notebooks from a template.
-This script reads a notebook template, replaces the parameters in the
-template with the proper values, and saves the modified notebooks.
+Script that generates the profiler notebooks from a given notebook template (template.ipynb) and
+a params.yaml file containing the parameters to be replaced in the template.
 """
 import argparse
+import itertools
 import logging
 import os
 from os import path as os_path
 
 import nbformat
+import yaml
 
 
 logger = logging.getLogger(__name__)
@@ -20,35 +21,53 @@ console_handler.setFormatter(
 )
 logger.addHandler(console_handler)
 
+NOTEBOOK_TEMPLATE_FILENAME = "template.ipynb"
+PARAMS_FILENAME = "params.yaml"
 
-def build_parameters_values():
+
+def dict_combinations(input_dict: dict) -> list[dict]:
     """
-    Build a list of dictionaries containing all combinations of parameters
-    for generating profiler notebooks.
+    Generate all combinations of values from a dictionary.
+    Parameters
+    ----------
+    input_dict : dict
+        Dictionary containing parameter names and their possible values.
+    Returns
+    -------
+    list of dict
+        List of dictionaries, each representing a unique combination of parameters.
+    """
+    keys, values = input_dict.keys(), input_dict.values()
+    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
+
+
+def build_parameters_values(params_path: str) -> list[dict]:
+    """
+    Build a list of dictionaries containing all combinations of parameters based on
+    the provided params.yaml file.
+    Parameters
+    ----------
+    params_path : str
+        Path to the params.yaml file.
     Returns
     -------
     list of dict
         Each dictionary contains a unique combination of parameters.
+    Raises
+    ------
+    FileNotFoundError
+        If the params.yaml file does not exist.
+    ValueError
+        If the params.yaml file is empty or improperly formatted.
     """
-    image_pixel_side_values = (500, 1_000, 10_000, 100_000)
-    viewport_pixel_size_values = (600, 1_000, 2_000, 4_000)
-    n_images_values = (1, 3, 5, 10, 25)
-    sidecar_values = (True, False)
-    with_dq_values = (False, True)
+    with open(params_path, "r") as f:
+        params = yaml.full_load(f)
+    if not params:
+        msg = f"No parameters found in {params_path}"
+        logger.error(msg)
+        raise ValueError(msg)
 
-    parameters_values = []
-    for image_pixel_side in image_pixel_side_values:
-        for viewport_pixel_size in viewport_pixel_size_values:
-            for n_images in n_images_values:
-                for sidecar in sidecar_values:
-                    for with_dq in with_dq_values:
-                        parameters_values.append({
-                            "image_pixel_side_value": image_pixel_side,
-                            "viewport_pixel_size_value": viewport_pixel_size,
-                            "n_images_value": n_images,
-                            "sidecar_value": sidecar,
-                            "with_dq_value": with_dq,
-                        })
+    parameters_values = dict_combinations(params)
 
     return parameters_values
 
@@ -72,7 +91,7 @@ def clear_notebook_outputs(notebook: nbformat.NotebookNode) -> nbformat.Notebook
     return notebook
 
 
-def generate_profiler_notebook(template_path: str, parameters_values: dict
+def generate_notebook(template_path: str, parameters_values: dict
 ) -> nbformat.NotebookNode:
     """
     Generate a profiler notebook from the template with the specified parameters.
@@ -82,8 +101,7 @@ def generate_profiler_notebook(template_path: str, parameters_values: dict
         Path to the notebook template file.
     parameters_values : dict
         Dictionary containing the parameters to replace in the template.
-        Expected keys: 'image_pixel_side_value', 'viewport_pixel_size_value', 'n_images_value',
-        'sidecar_value', 'with_dq_value'.
+        Example keys: 'image_pixel_side_value', 'viewport_pixel_size_value', 'n_images_value'.
     Returns
     -------
     nbformat.NotebookNode
@@ -116,15 +134,16 @@ def generate_profiler_notebook(template_path: str, parameters_values: dict
     return template_nb
 
 
-def generate_profiler_notebooks(
-        template_path: str, output_dir_path: str, log_level: str = "INFO"
+def generate_notebooks(
+        input_dir_path: str, output_dir_path: str, log_level: str = "INFO"
 ) -> list[str]:
     """
-    Generate profiler notebooks from a template and save them to the specified directory.
+    Generate profiler notebooks from a template and a params.yaml file, and save them to
+    the specified directory.
     Parameters
     ----------
-    template_path : str
-        Path to the notebook template file.
+    input_dir_path : str
+        Path to the directory containing the template notebook and params.yaml file.
     output_dir_path : str
         Directory where the generated notebooks will be saved.
     log_level : str, optional
@@ -137,17 +156,22 @@ def generate_profiler_notebooks(
     # Set up logging
     logger.setLevel(log_level.upper())
 
-    current_file_path = os_path.dirname(os_path.abspath(__file__))
+    # Resolve the template path and params path
+    template_path = os_path.join(input_dir_path, NOTEBOOK_TEMPLATE_FILENAME)
+    params_path = os_path.join(input_dir_path, PARAMS_FILENAME)
 
-    # Resolve the template path relative to the current file's directory
-    template_path = os_path.join(current_file_path, template_path)
-
-    # Resolve the output path relative to the current file's directory
-    output_dir_path = os_path.join(current_file_path, output_dir_path)
+    # Resolve the output path
+    output_dir_path = os_path.join(input_dir_path, output_dir_path)
 
     # Check if the template file exists
     if not os_path.isfile(template_path):
         msg = f"Template file does not exist: {template_path}"
+        logger.error(msg)
+        raise FileNotFoundError(msg)
+
+    # Check if the params file exists
+    if not os_path.isfile(params_path):
+        msg = f"Params file does not exist: {params_path}"
         logger.error(msg)
         raise FileNotFoundError(msg)
 
@@ -158,23 +182,19 @@ def generate_profiler_notebooks(
         raise FileNotFoundError(msg)
 
     # Generate all combinations of parameters
-    parameters_combinations = build_parameters_values()
+    parameters_combinations = build_parameters_values(params_path)
 
     # Iterate over each combination of parameters and generate the notebook
     logger.info("Generating profiler notebooks...")
 
+    nb_base_filename = os_path.split(input_dir_path)[-1]
     output_paths = []
     for parameters_values in parameters_combinations:
         # Create the output path for the generated notebook
-        nb_filename = (
-            "profiler_notebook_"
-            f"image_pixel_side{parameters_values['image_pixel_side_value']}_"
-            f"viewport{parameters_values['viewport_pixel_size_value']}_"
-            f"n_images{parameters_values['n_images_value']}_"
-            f"sidecar{parameters_values['sidecar_value']}_"
-            f"with_dq{parameters_values['with_dq_value']}"
-            ".ipynb"
-        )
+        nb_filename = nb_base_filename
+        for k,v in parameters_values.items():
+            nb_filename = f"{nb_filename}-{k.removesuffix('_value')}{v}"
+        nb_filename = f"{nb_filename}.ipynb"
         output_path = os_path.join(output_dir_path, nb_filename)
 
         # Check if the output path already exists, if so remove the file
@@ -185,7 +205,7 @@ def generate_profiler_notebooks(
             continue
 
         # Generate the notebook with proper parameters
-        parametrized_nb = generate_profiler_notebook(
+        parametrized_nb = generate_notebook(
             template_path=template_path,
             parameters_values=parameters_values,
         )
@@ -202,11 +222,15 @@ def generate_profiler_notebooks(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = "Script that generates the profiler notebooks from a given notebook template."
+        description = (
+            "Script that generates the profiler notebooks from a given notebook "
+            "template (template.ipynb) and a params.yaml file containing the parameters "
+            "to be replaced in the template."
+        )
     )
     parser.add_argument(
-        "--template_path",
-        help = "Path to the notebook template file.",
+        "--input_dir_path",
+        help = "Path to the directory containing the template notebook and params.yaml file.",
         required = True,
         type = str,
     )
@@ -224,4 +248,4 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    generate_profiler_notebooks(**vars(parser.parse_args()))
+    generate_notebooks(**vars(parser.parse_args()))

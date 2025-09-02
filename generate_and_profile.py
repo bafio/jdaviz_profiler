@@ -7,7 +7,7 @@ import asyncio
 import logging
 from os import path as os_path
 
-from generate_profiler_notebooks import generate_profiler_notebooks
+from notebooks_generator import generate_notebooks
 from profiler import profile
 
 
@@ -21,15 +21,15 @@ logger.addHandler(console_handler)
 
 
 async def generate_and_profile(
-        template_path: str, output_dir_path: str, url: str, token: str, headless: bool,
+        input_dir_path: str, output_dir_path: str, url: str, token: str, headless: bool,
         wait_after_execute: int, log_level: str = "INFO"
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
     Parameters
     ----------
-    template_path : str
-        Path to the notebook template file.
+    input_dir_path : str
+        Path to the directory containing the template notebook and params.yaml file.
     output_dir_path : str
         Path to save the generated profiler notebooks.
     url : str
@@ -46,13 +46,9 @@ async def generate_and_profile(
     # Set up logging
     logger.setLevel(log_level.upper())
 
-    output_paths = generate_profiler_notebooks(
-        template_path=template_path, output_dir_path=output_dir_path, log_level=log_level
+    nb_input_paths = generate_notebooks(
+        input_dir_path=input_dir_path, output_dir_path=output_dir_path, log_level=log_level
     )
-    nb_input_paths = [os_path.join(output_dir_path, os_path.split(p)[-1]) for p in output_paths]
-
-    # Limit to first 5 notebooks for profiling
-    nb_input_paths = nb_input_paths[:5]
 
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
@@ -71,8 +67,8 @@ if __name__ == "__main__":
         )
     )
     parser.add_argument(
-        "--template_path",
-        help = "Path to the notebook template file.",
+        "--input_dir_path",
+        help = "Path to the directory containing the template notebook and params.yaml file.",
         required = True,
         type = str,
     )
