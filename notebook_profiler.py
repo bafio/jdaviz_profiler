@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Script to profile notebooks.
+Uses Playwright to launch and interact with JupyterLab, executing each notebook cell and
+recording performance metrics.
+
+Usage:
+$> python profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> \
+    --nb_input_path <notebook path>
 """
 
 import argparse
@@ -12,8 +17,6 @@ import time
 
 from playwright.async_api import async_playwright, ElementHandle, Page
 
-
-ROMAN_CAL_KERNEL_NAME = "roman-cal"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -282,7 +285,7 @@ async def execute_cell(
         logger.exception(f"An error occurred while executing cell {cell_index}: {e}")
 
 
-async def profile_notebook(url: str, headless: str, wait_after_execute: int) -> None:
+async def _profile_notebook(url: str, headless: str, wait_after_execute: int) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
     Parameters
@@ -329,9 +332,9 @@ async def profile_notebook(url: str, headless: str, wait_after_execute: int) -> 
         await browser.close()
 
 
-async def profile(
-        url: str, token: str, nb_input_path: str, headless: bool, wait_after_execute: int,
-        log_level: str = "INFO"
+async def profile_notebook(
+        url: str, token: str, kernel_name: str, nb_input_path: str, headless: bool,
+        wait_after_execute: int, log_level: str = "INFO"
 ) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
@@ -341,6 +344,8 @@ async def profile(
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
+    kernel_name : str
+        The name of the kernel to use for the notebook.
     nb_input_path : str
         Path to the input notebook to be profiled.
     headless : bool
@@ -364,6 +369,7 @@ async def profile(
         "Starting profiler with "
         f"URL: {url} -- "
         f"Token: {token} -- "
+        f"Kernel Name: {kernel_name} -- "
         f"Input Notebook Path: {nb_input_path} -- "
         f"Headless: {headless} -- "
         f"Wait After Execute: {wait_after_execute} -- "
@@ -376,12 +382,12 @@ async def profile(
     }
 
     await clear_jupyterlab_sessions(url, headers)
-    await restart_kernel(url, headers, ROMAN_CAL_KERNEL_NAME)
+    await restart_kernel(url, headers, kernel_name)
     await upload_notebook(url, headers, nb_input_path)
 
     notebook_url = f"{url}/lab/tree/{nb_input_path.split('/')[-1]}/?token={token}"
 
-    await profile_notebook(
+    await _profile_notebook(
         url=notebook_url,
         headless=headless,
         wait_after_execute=wait_after_execute
@@ -392,7 +398,10 @@ async def profile(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = "Script to profile notebooks."
+        description = (
+            "Script that Uses Playwright to launch and interact with JupyterLab, "
+            "executing each notebook cell and recording performance metrics."
+        )
     )
     parser.add_argument(
         "--url",
@@ -403,6 +412,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--token",
         help = "The token to access the JupyterLab instance.",
+        required = True,
+        type = str,
+    )
+    parser.add_argument(
+        "--kernel_name",
+        help = "The name of the kernel to use for the notebook.",
         required = True,
         type = str,
     )
@@ -434,4 +449,4 @@ if __name__ == "__main__":
         choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    asyncio.run(profile(**vars(parser.parse_args())))
+    asyncio.run(profile_notebook(**vars(parser.parse_args())))

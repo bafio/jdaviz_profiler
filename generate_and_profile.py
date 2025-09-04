@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-Script to generate the profiler notebooks from a template and run the profiler on them.
+Script to generate the parameterized notebooks from a template.ipynb and params.yaml and
+run the profiler on them.
+
+Usage:
+$> python generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> \
+    --token <API Token> --kernel_name <kernel name>
 """
 import argparse
 import asyncio
 import logging
-from os import path as os_path
 
 from notebooks_generator import generate_notebooks
-from profiler import profile
+from notebook_profiler import profile_notebook
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +25,7 @@ logger.addHandler(console_handler)
 
 
 async def generate_and_profile(
-        input_dir_path: str, output_dir_path: str, url: str, token: str, headless: bool,
+        input_dir_path: str, url: str, token: str, kernel_name: str, headless: bool,
         wait_after_execute: int, log_level: str = "INFO"
 ) -> None:
     """
@@ -30,12 +34,12 @@ async def generate_and_profile(
     ----------
     input_dir_path : str
         Path to the directory containing the template notebook and params.yaml file.
-    output_dir_path : str
-        Path to save the generated profiler notebooks.
     url : str
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
+    kernel_name : str
+        The name of the kernel to use for the notebook.
     headless : bool
         Whether to run in headless mode.
     wait_after_execute : int
@@ -45,17 +49,25 @@ async def generate_and_profile(
     """
     # Set up logging
     logger.setLevel(log_level.upper())
-
-    nb_input_paths = generate_notebooks(
-        input_dir_path=input_dir_path, output_dir_path=output_dir_path, log_level=log_level
+    logger.debug(
+        "Generating and profiling notebooks with "
+        f"Input Directory Path: {input_dir_path} -- "
+        f"URL: {url} -- "
+        f"Token: {token} -- "
+        f"Kernel Name: {kernel_name} -- "
+        f"Headless: {headless} -- "
+        f"Wait After Execute: {wait_after_execute} -- "
+        f"Log Level: {log_level}"
     )
+
+    nb_input_paths = generate_notebooks(input_dir_path=input_dir_path, log_level=log_level)
 
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
 
-        await profile(
-            url=url, token=token, nb_input_path=nb_input_path, headless=headless,
-            wait_after_execute=wait_after_execute, log_level=log_level
+        await profile_notebook(
+            url=url, token=token, kernel_name=kernel_name, nb_input_path=nb_input_path,
+            headless=headless, wait_after_execute=wait_after_execute, log_level=log_level
         )
 
 
@@ -73,13 +85,6 @@ if __name__ == "__main__":
         type = str,
     )
     parser.add_argument(
-        "--output_dir_path",
-        help="Path to save the generated profiler notebooks.",
-        required=False,
-        type=str,
-        default="notebooks",
-    )
-    parser.add_argument(
         "--url",
         help = "The URL of the JupyterLab instance where the notebook is going to be profiled.",
         required = True,
@@ -88,6 +93,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--token",
         help = "The token to access the JupyterLab instance.",
+        required = True,
+        type = str,
+    )
+    parser.add_argument(
+        "--kernel_name",
+        help = "The name of the kernel to use for the notebook.",
         required = True,
         type = str,
     )

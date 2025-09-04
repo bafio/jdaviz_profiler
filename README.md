@@ -1,35 +1,84 @@
-# Imviz profiling
+# Jdaviz Profiler
 
-## we want to know:
-- if you have a really large image loaded into imviz, at what display size does interaction become laggy
-- if you have a really small image loaded into imviz with a very large display, does compression ensure that the display size doesn't matter?
-- does jdaviz use local memory efficiently?
-    - do copies get made or unnecessary parts of files get loaded into memory?
-- how poorly does imviz performance scale with N_links (number of simultaneously loaded images)
-- what CPU speed is "enough"?
-    - do we benefit from being allocated >1 core?
-    - (bearing in mind: EC2 allocates faster CPUs with more memory, so these will be correlated)
-- how are users distributed within "nodes"/"pods"/EC2 instances, teams?
-- new users would **really** benefit from guidance about which kind of server to use for a given science use-case; profiling will help us find out what's best
+Jdaviz Profiler is a Python toolkit designed to automate the generation and profiling of Jupyter notebooks for the [jdaviz](https://github.com/spacetelescope/jdaviz) visualization suite. It enables users to systematically test and benchmark jdaviz’s Imviz plugin under a variety of parameter combinations, such as image size, number of images, viewport size, and more.
 
-## performance grid dimensions
-- image size
-    - [(500, 1000, 10_000, 100_000) pix]^2
-- viewport size
-    - [(600, 1000, 2000, 4000) pix]^2
-        - (with plugin tray closed)
-- number of large images loaded simultaneously and WCS-linked
-    - (1, 3, 5, 10, 25) images
-- inside/outside of sidecar
-- with and without DQ loaded
-- local memory and CPU allocation
-- network's download speed (python kernel to client)
-    - at what download speed should we warn users that the performance will be bad / "users will experience best performance with at least X Mbps download"
-    - (5, 10, 100, 1000) Mbps
 
-## Installing
-To install, check out this repository and:
+## Features
 
-    pip install -e .
+### Notebook Generation:
 
-Python 3.10 or later is supported (Python 3.12 or later on Windows).
+Automatically creates Jupyter notebooks from a template (`template.ipynb`) and a parameter configuration file (`params.yaml`).
+
+All possible combinations of parameters are generated, allowing for comprehensive profiling.
+
+The `template.ipynb` file serves as the base notebook, while `params.yaml` contains the parameter values to be injected into the notebook.
+
+The `template.ipynb` must have a cell with placeholders for the parameters to be replaced, therefore this cell must:
+- precede all other cells with actual code using the parameters.
+- be tagged with the `parameters` label.
+
+Each parameter in the params.yaml file must have a corresponding placeholder in the template.ipynb file, and the placeholders must be unique having `_value` as suffix, e.g. `image_pixel_side_value` or `viewport_pixel_size_value`.
+
+The generated parameterized notebooks will be saved in the `<usecase path>/notebooks` directory.
+
+An example of how to structure a new `<usecase>`, and the `template.ipynb` and `params.yaml` files, is provided in this repository in `imviz_images`.
+
+### Notebook Profiling:
+
+Uses Playwright to launch and interact with JupyterLab, executing each notebook cell and recording performance metrics.
+
+### Session Management:
+
+Handles JupyterLab sessions, kernel restarts, notebook uploads, and clean-up automatically.
+
+### Extensible:
+
+Easily add new parameters or modify the template to test different scenarios, as well as create new `<usecases>` following the directives under "Notebook Generation".
+
+
+## How It Works
+
+1. **Parameter Setup**: Define the parameters and their possible values in `params.yaml`.
+2. **Notebook Generation**: Run the notebook generator to create all combinations of notebooks in the output directory.
+3. **Profiling**: Use the profiler to execute each notebook cell in a JupyterLab instance, collecting timing and output data for each cell.
+
+
+## Installation
+
+To install, check out this repository and run:
+
+```bash
+pip install -e .
+```
+
+Python 3.12 or later is supported.
+
+
+## Usage
+
+- Generate notebooks:
+    ```bash
+    python notebooks_generator.py --input_dir_path <usecase path>
+    ```
+- Profile notebooks:
+    ```bash
+    python profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
+    ```
+- Or run both steps together:
+    ```bash
+    python generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
+    ```
+
+
+## Dependencies
+
+- `jdaviz`
+- `pillow`
+- `playwright`
+- `requests`
+- `PyYAML`
+
+
+## License
+
+BSD 3-Clause License
