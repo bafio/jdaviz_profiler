@@ -220,12 +220,12 @@ def generate_notebooks(
         raise FileNotFoundError(msg)
 
     # Check if the configs file exists, load configurations, else no sweat
-    if not os_path.isfile(configs_path):
+    if os_path.isfile(configs_path):
+        configs = load_dict_from_yaml_file(configs_path)
+    else:
         msg = f"Configs file does not exist: {configs_path}"
         logger.warning(msg)
         configs = None
-    else:
-        configs = load_dict_from_yaml_file(configs_path)
 
     # Ensure the output directory exists
     if not os_path.isdir(output_dir_path):

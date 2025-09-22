@@ -15,16 +15,17 @@ import logging
 import re
 import requests
 import time
-from collections import OrderedDict
-# from io import BytesIO
+from io import BytesIO
 from os import path as os_path
 
 from playwright.async_api import async_playwright, ElementHandle
 from playwright.async_api._context_manager import PlaywrightContextManager
-# from PIL import Image
+from PIL import Image
 
 from utils import load_dict_from_yaml_file
 
+
+type ElementHandleList = list[ElementHandle]
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -54,19 +55,10 @@ class Profiler:
     # Selector for all code cells in the notebook
     NB_CELLS_SELECTOR = ".jp-WindowedPanel-viewport>.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell"
 
-    # Selector for all output cells in a code cell
-    OUTPUT_CELLS_SELECTOR = ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
-
-    # Selector for all text output cells in a code cell
-    OUTPUT_CELLS_TEXT_SELECTOR = ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
-
-    # Regex to identify the cell output containing the time elapsed information
-    CELL_OUTPUT_REGEX = r'^.*cell\stime\selapsed:\s(?P<time_elapsed>\d+\.\d+)$'
-
 
     def __init__(
             self, playwright: PlaywrightContextManager, url: str, headless: str, max_wait_time: int,
-            configs: dict
+            configs: dict,
         ) -> None:
         """
         Initialize the Profiler with Playwright, URL, headless mode, wait time, and configurations.
@@ -83,18 +75,52 @@ class Profiler:
         configs : dict
             Dictionary containing the configurations for the notebook.
         """
-        self.playwright = playwright
-        self.url = url
-        self.headless = headless
-        self.max_wait_time = max_wait_time
-        self.configs = configs
-        self.viz_cell = None
+        self._playwright = playwright
+        self._url = url
+        self._headless = headless
+        self._max_wait_time = max_wait_time
+        self._configs = configs
+        rgb_border_color_triplet_value = self.configs[self.RGB_BORDER_COLOR_TRIPLET_KEY]
+        self._viz_cell_regex = fr"border-color: rgb\({rgb_border_color_triplet_value}\)"
+        self._viz_cell = None
         self.browser = None
         self.context = None
         self.page = None
-        self.nb_cells = OrderedDict()
-        self.nb_cells_execution_times = OrderedDict()
-        self.viz_cell_regex = fr"border-color: rgb\({self.configs[self.RGB_BORDER_COLOR_TRIPLET_KEY]}\)"  # noqa
+
+
+    @property
+    def playwright(self) -> PlaywrightContextManager:
+        return self._playwright
+
+
+    @property
+    def url(self) -> str:
+        return self._url
+
+
+    @property
+    def headless(self) -> bool:
+        return self._headless
+
+
+    @property
+    def max_wait_time(self) -> int:
+        return self._max_wait_time
+
+
+    @property
+    def configs(self) -> dict:
+        return self._configs
+
+
+    @property
+    def viz_cell_regex(self) -> str:
+        return self._viz_cell_regex
+
+
+    @property
+    def viz_cell(self) -> "VizCell":
+        return self._viz_cell
 
 
     async def setup(self) -> None:
@@ -132,116 +158,33 @@ class Profiler:
         await asyncio.sleep(sleep_time)
 
         # Collect cells to execute
-        await self.collect_nb_cells()
+        executable_cells = await self.collect_executable_cells()
 
         # Start profiling
         logger.info("Starting profiling...")
 
         sleep_time = 2
         # Execute each cell and wait for outputs
-        for nb_cell_item in self.nb_cells.items():
-            await self.execute_cell(nb_cell_item)
+        for executable_cell in executable_cells:
+            await executable_cell.execute()
             # Wait a bit to ensure stability before moving to the next cell
             logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
             await asyncio.sleep(sleep_time)
 
-        logger.info(f"Cells execution times: {sum(self.nb_cells_execution_times.values())}")
+        # Log the total execution time for all cells
+        total_execution_time = sum(
+            executable_cell.execution_time for executable_cell in executable_cells
+        )
+        logger.info(f"Cells execution times: {total_execution_time}")
         logger.info("Profiling completed.")
 
 
-    async def execute_cell(self, cell_item: tuple[int, ElementHandle]) -> None:
-        """
-        Execute a code cell in the notebook.
-        """
-        cell_index, cell = cell_item
-        try:
-            logger.info(f"Executing cell {cell_index}")
-            # Focus on the cell
-            await cell.focus()
-            # Execute the cell
-            await self.page.keyboard.press('Shift+Enter')
-            # Initialize variables to track the viz cell and elapsed time
-            viz_cell_is_stable, timer, time_elapsed = False, time.time(), 0
-
-            output_cells = None
-            while time_elapsed < self.max_wait_time:
-                # If we have the viz cell, check if it's stable
-                if self.viz_cell:
-                    logger.debug("We already have the viz cell, checking if it's stable...")
-                    viz_cell_is_stable = await self.is_viz_cell_stable()
-                    logger.debug(f"viz_cell_is_stable: {viz_cell_is_stable}")
-                    if viz_cell_is_stable:
-                        # If the viz cell is stable, we can stop looping, take the time and move on
-                        logger.debug("Viz cell is stable, stopping the wait loop...")
-                        time_elapsed = time.time() - timer
-                        await self.save_time_elapsed(cell_index, time_elapsed, viz_cell_is_stable)
-                        return
-                else:
-                    # Wait a bit before checking again
-                    logger.debug("Waiting for the output cells to appear...")
-                    await asyncio.sleep(0.5)
-                    # Look for the viz cell in the outputs of the current cell
-                    output_cells = await cell.query_selector_all(self.OUTPUT_CELLS_SELECTOR)
-                    logger.debug(f"Found {len(output_cells)} output cells")
-                    # if we found output cells, look for the viz cell among them
-                    if output_cells:
-                        logger.debug("Looking for the viz cell among the output cells...")
-                        await self.detect_viz_cell(output_cells)
-                # In this case, if we don't have a viz cell or we have a not stable viz cell,
-                # we take the time elapsed and check if we reached the max wait time
-                time_elapsed = time.time() - timer
-
-            # save time elapsed from the output cells
-            await self.save_time_elapsed(
-                cell_index, time_elapsed, viz_cell_is_stable, output_cells
-            )
-
-        except Exception as e:
-            logger.exception(f"An error occurred while executing cell {cell_index}: {e}")
-
-
-    async def save_time_elapsed(
-            self, cell_index: int, time_elapsed: float, viz_cell_is_stable: bool,
-            output_cells: list[ElementHandle] = None) -> None:
-        """
-        Save the time elapsed for a cell execution.
-        Parameters
-        ----------
-        cell_index : int
-            The index of the cell.
-        time_elapsed : float
-            The time elapsed for the cell execution.
-        viz_cell_is_stable : bool
-            Whether the viz cell is stable.
-        output_cells : list[ElementHandle], optional
-            The list of output cell elements (default is None).
-        """
-        if not viz_cell_is_stable and output_cells:
-            # try to gather time elapsed from the cell output
-            logger.debug("Trying to gather time elapsed from the cell output...")
-            logger.debug(f"Found {len(output_cells)} output cells")
-            # filter to only text outputs
-            text_output_cells = await output_cells[0].query_selector_all(
-                self.OUTPUT_CELLS_TEXT_SELECTOR
-            )
-            logger.debug(f"Found {len(text_output_cells)} text output cells")
-            if text_output_cells:
-                output_txt = await text_output_cells[0].inner_text()
-                match = re.search(self.CELL_OUTPUT_REGEX, output_txt)
-                if match:
-                    time_elapsed = float(match.group("time_elapsed"))
-
-        self.nb_cells_execution_times[cell_index] = time_elapsed
-        # Log the time elapsed for the cell execution
-        logger.info(f"Cell {cell_index} completed in {time_elapsed:.2f} seconds")
-
-
-    async def detect_viz_cell(self, output_cells: list[ElementHandle]) -> None:
+    async def detect_viz_cell(self, output_cells: ElementHandleList) -> None:
         """
         Detect the viz cell from the list of output cells.
         Parameters
         ----------
-        output_cells : list[ElementHandle]
+        output_cells : ElementHandleList
             The list of output cell elements.
         """
         # Look for the viz cell among the output cells
@@ -257,49 +200,28 @@ class Profiler:
                 style = await child.get_attribute("style")
                 if style and re.search(self.viz_cell_regex, style):
                     # We found the viz cell, store it and return
-                    self.viz_cell = output_cell
+                    self._viz_cell = VizCell(output_cell)
                     logger.debug("Viz cell detected")
                     return
 
 
-    async def is_viz_cell_stable(self) -> bool:
+    async def collect_executable_cells(self) -> list["ExecutableCell"]:
         """
-        Check if the viz cell is stable (i.e., not changing).
+        Collect all code cells in the notebook and return them as a list of
+        ExecutableCell instances.
         Returns
         -------
-        bool
-            True if the viz cell is stable, False otherwise.
-        """
-        # Take a screenshot of the viz cell
-        screenshot1 = await self.viz_cell.screenshot()
-
-        # Wait a short period before taking another screenshot
-        await asyncio.sleep(0.5)
-
-        # Take another screenshot of the viz cell
-        screenshot2 = await self.viz_cell.screenshot()
-
-        # image1 = Image.open(BytesIO(screenshot1))
-        # image2 = Image.open(BytesIO(screenshot2))
-        # image1.save("screenshot1.png")
-        # image2.save("screenshot2.png")
-
-        # Compare the two screenshots
-        screenshots_are_the_same = screenshot1 == screenshot2
-        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
-        return screenshots_are_the_same
-
-
-    async def collect_nb_cells(self) -> None:
-        """
-        Collect all code cells in the notebook and store them in an ordered dictionary.
+        list[ExecutableCell]
+            List of ExecutableCell instances representing the code cells in the notebook.
         """
         # Collect all code cells in the notebook
         nb_cells = await self.page.query_selector_all(self.NB_CELLS_SELECTOR)
-
         # Store cells in an ordered dictionary with their index
-        self.nb_cells = OrderedDict(zip(range(1, len(nb_cells)+1), nb_cells))
-        logger.info(f"Number of cells in the notebook: {len(self.nb_cells)}")
+        executable_cells = [
+            ExecutableCell(cell=cell, index=i, profiler=self) for i, cell in enumerate(nb_cells, 1)
+        ]
+        logger.info(f"Number of cells in the notebook: {len(executable_cells)}")
+        return executable_cells
 
 
     async def close(self) -> None:
@@ -312,22 +234,232 @@ class Profiler:
         logger.debug("Browser closed")
 
 
+class VizCell:
+    """Class representing the viz cell in a Jupyter notebook."""
+
+    def __init__(self, element: ElementHandle = None) -> None:
+        """
+        Initialize the VizCell with a Playwright ElementHandle.
+        Parameters
+        ----------
+        element : ElementHandle
+            The Playwright ElementHandle representing the viz cell.
+        """
+        self._element = element
+
+
+    @property
+    def element(self) -> ElementHandle:
+        return self._element
+
+
+    async def is_stable(self) -> bool:
+        """
+        Check if the viz cell is stable (i.e., not changing).
+        Returns
+        -------
+        bool
+            True if the viz cell is stable, False otherwise.
+        """
+        if self.element is None:
+            logger.debug("Viz cell element is None, cannot be stable")
+            return False
+
+        # Take a screenshot of the viz cell
+        screenshot1 = await self.element.screenshot()
+
+        # Wait a short period before taking another screenshot
+        await asyncio.sleep(0.5)
+
+        # Take another screenshot of the viz cell
+        screenshot2 = await self.element.screenshot()
+
+        # image1 = Image.open(BytesIO(screenshot1))
+        # image2 = Image.open(BytesIO(screenshot2))
+        # image1.save("screenshot1.png")
+        # image2.save("screenshot2.png")
+
+        # Compare the two screenshots
+        screenshots_are_the_same = screenshot1 == screenshot2
+        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
+        return screenshots_are_the_same
+
+
+class ExecutableCell:
+    """Class representing an executable cell in a Jupyter notebook."""
+
+    # Selector for all output cells in a code cell
+    OUTPUT_CELLS_SELECTOR = ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
+
+    # Selector for all text output cells in a code cell
+    OUTPUT_CELLS_TEXT_SELECTOR = ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
+
+    # Regex group name for the time elapsed value
+    CELL_OUTPUT_REGEX_GROUP_NAME = "time_elapsed"
+
+    # Regex to identify the cell output containing the time elapsed information
+    CELL_OUTPUT_REGEX = fr'^.*cell\stime\selapsed:\s(?P<{CELL_OUTPUT_REGEX_GROUP_NAME}>\d+\.\d+)$'
+
+
+    def __init__(self, cell: ElementHandle, index: int, profiler: Profiler) -> None:
+        """
+        Initialize the ExecutableCell with a Playwright ElementHandle and an optional index.
+        Parameters
+        ----------
+        cell : ElementHandle
+            The Playwright ElementHandle representing the cell.
+        index : int
+            The index of the cell.
+        profiler : Profiler
+            The Profiler instance.
+        """
+        self._cell = cell
+        self._index = index
+        self._profiler = profiler
+        self.execution_time = 0
+
+
+    @property
+    def cell(self) -> ElementHandle:
+        return self._cell
+
+
+    @property
+    def index(self) -> int:
+        return self._index
+
+
+    @property
+    def profiler(self) -> Profiler:
+        return self._profiler
+
+
+    async def execute(self) -> None:
+        try:
+            logger.info(f"Executing cell {self.index}")
+            # Focus on the cell
+            await self.cell.focus()
+            # Execute the cell
+            await self.profiler.page.keyboard.press('Shift+Enter')
+            # Initialize variables to track the viz cell and elapsed time
+            viz_cell_is_stable, timer, time_elapsed = False, time.time(), 0
+
+            output_cells = None
+            while time_elapsed < self.profiler.max_wait_time:
+                # If we have the viz cell, check if it's stable
+                if self.profiler.viz_cell:
+                    logger.debug("We already have the viz cell, checking if it's stable...")
+                    viz_cell_is_stable = await self.profiler.viz_cell.is_stable()
+                    logger.debug(f"viz_cell_is_stable: {viz_cell_is_stable}")
+                    if viz_cell_is_stable:
+                        # If the viz cell is stable, we can stop looping, take the time and move on
+                        logger.debug("Viz cell is stable, stopping the wait loop...")
+                        time_elapsed = time.time() - timer
+                        await self.save_execution_time(time_elapsed, viz_cell_is_stable)
+                        return
+                else:
+                    # Wait a bit before checking again
+                    logger.debug("Waiting for the output cells to appear...")
+                    await asyncio.sleep(0.5)
+                    # Look for the viz cell in the outputs of the current cell
+                    output_cells = await self.cell.query_selector_all(self.OUTPUT_CELLS_SELECTOR)
+                    logger.debug(f"Found {len(output_cells)} output cells")
+                    # if we found output cells, look for the viz cell among them
+                    if output_cells:
+                        logger.debug("Looking for the viz cell among the output cells...")
+                        await self.profiler.detect_viz_cell(output_cells)
+                # In this case, if we don't have a viz cell or we have a not stable viz cell,
+                # we take the time elapsed and check if we reached the max wait time
+                time_elapsed = time.time() - timer
+
+            # save time elapsed from the output cells
+            await self.save_execution_time(time_elapsed, viz_cell_is_stable, output_cells)
+
+        except Exception as e:
+            logger.exception(f"An error occurred while executing cell {self.index}: {e}")
+
+
+    async def save_execution_time(
+            self, time_elapsed: float, viz_cell_is_stable: bool,
+            output_cells: ElementHandleList = None
+        ) -> None:
+        """
+        Save the time for a cell execution.
+        Parameters
+        ----------
+        time_elapsed : float
+            The time elapsed for the cell execution.
+        viz_cell_is_stable : bool
+            Whether the viz cell is stable.
+        output_cells : ElementHandleList, optional
+            The list of output cell elements (default is None).
+        """
+        if not viz_cell_is_stable and output_cells:
+            # try to gather time elapsed from the cell output
+            logger.debug("Trying to gather time elapsed from the cell output...")
+            logger.debug(f"Found {len(output_cells)} output cells")
+            # filter to only text outputs
+            text_output_cells = await output_cells[0].query_selector_all(
+                self.OUTPUT_CELLS_TEXT_SELECTOR
+            )
+            logger.debug(f"Found {len(text_output_cells)} text output cells")
+            if text_output_cells:
+                output_txt = await text_output_cells[0].inner_text()
+                match = re.search(self.CELL_OUTPUT_REGEX, output_txt)
+                if match:
+                    time_elapsed = float(match.group(self.CELL_OUTPUT_REGEX_GROUP_NAME))
+
+        self.execution_time = time_elapsed
+        # Log the time elapsed for the cell execution
+        logger.info(f"Cell {self.index} completed in {self.execution_time:.2f} seconds")
+
+
 class JupyterLabHelper:
     """Helper class to interact with JupyterLab."""
 
     def __init__(self, url: str, token: str, kernel_name: str, nb_input_path: str) -> None:
-        self.url = url
-        self.token = token
-        self.kernel_name = kernel_name
-        self.nb_input_path = nb_input_path
-        self.headers = {
-            "Authorization": f"token {self.token}",
+        self._url = url
+        self._token = token
+        self._kernel_name = kernel_name
+        self._nb_input_path = nb_input_path
+        self._headers = {
+            "Authorization": f"token {self._token}",
             "Content-Type": "application/json",
         }
-        self.notebook_url = (
-            f"{self.url}/lab/tree/{self.nb_input_path.split('/')[-1]}/"
-            f"?token={self.token}"
+        self._notebook_url = (
+            f"{self._url}/lab/tree/{self._nb_input_path.split('/')[-1]}/"
+            f"?token={self._token}"
         )
+
+
+    @property
+    def url(self) -> str:
+        return self._url
+
+
+    @property
+    def token(self) -> str:
+        return self._token
+
+
+    @property
+    def kernel_name(self) -> str:
+        return self._kernel_name
+
+
+    @property
+    def nb_input_path(self) -> str:
+        return self._nb_input_path
+
+
+    @property
+    def headers(self) -> dict:
+        return self._headers
+
+
+    @property
+    def notebook_url(self) -> str:
+        return self._notebook_url
 
 
     async def clear_jupyterlab_sessions(self) -> None:

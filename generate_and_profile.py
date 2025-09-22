@@ -26,7 +26,7 @@ logger.addHandler(console_handler)
 
 async def generate_and_profile(
         input_dir_path: str, url: str, token: str, kernel_name: str, headless: bool,
-        max_wait_time: int, log_level: str = "INFO"
+        max_wait_time: int, configs_path: str, log_level: str = "INFO"
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
@@ -44,6 +44,8 @@ async def generate_and_profile(
         Whether to run in headless mode.
     max_wait_time : int
         Max time to wait after executing each cell (in seconds).
+    configs_path : str
+        Path to the configs.yaml file.
     log_level : str, optional
         Set the logging level (default: "INFO").
     """
@@ -57,17 +59,21 @@ async def generate_and_profile(
         f"Kernel Name: {kernel_name} -- "
         f"Headless: {headless} -- "
         f"Max Wait Time: {max_wait_time} -- "
+        f"Configs Path: {configs_path} -- "
         f"Log Level: {log_level}"
     )
 
-    nb_input_paths = generate_notebooks(input_dir_path=input_dir_path, log_level=log_level)
+    nb_input_paths = generate_notebooks(
+        input_dir_path=input_dir_path, configs_path=configs_path, log_level=log_level
+    )
 
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
 
         await profile_notebook(
             url=url, token=token, kernel_name=kernel_name, nb_input_path=nb_input_path,
-            headless=headless, max_wait_time=max_wait_time, log_level=log_level
+            headless=headless, max_wait_time=max_wait_time, configs_path=configs_path,
+            log_level=log_level
         )
 
 
@@ -116,6 +122,13 @@ if __name__ == "__main__":
         required = False,
         type = int,
         default = 10,
+    )
+    parser.add_argument(
+        "--configs_path",
+        help = "Path to the configs.yaml file.",
+        required = False,
+        type = str,
+        default="configs.yaml",
     )
     parser.add_argument(
         "--log_level",
