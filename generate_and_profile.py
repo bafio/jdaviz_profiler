@@ -26,7 +26,7 @@ logger.addHandler(console_handler)
 
 async def generate_and_profile(
         input_dir_path: str, url: str, token: str, kernel_name: str, headless: bool,
-        wait_after_execute: int, log_level: str = "INFO"
+        max_wait_time: int, log_level: str = "INFO"
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
@@ -42,8 +42,8 @@ async def generate_and_profile(
         The name of the kernel to use for the notebook.
     headless : bool
         Whether to run in headless mode.
-    wait_after_execute : int
-        Time to wait after executing each cell (in seconds).
+    max_wait_time : int
+        Max time to wait after executing each cell (in seconds).
     log_level : str, optional
         Set the logging level (default: "INFO").
     """
@@ -56,7 +56,7 @@ async def generate_and_profile(
         f"Token: {token} -- "
         f"Kernel Name: {kernel_name} -- "
         f"Headless: {headless} -- "
-        f"Wait After Execute: {wait_after_execute} -- "
+        f"Max Wait Time: {max_wait_time} -- "
         f"Log Level: {log_level}"
     )
 
@@ -67,7 +67,7 @@ async def generate_and_profile(
 
         await profile_notebook(
             url=url, token=token, kernel_name=kernel_name, nb_input_path=nb_input_path,
-            headless=headless, wait_after_execute=wait_after_execute, log_level=log_level
+            headless=headless, max_wait_time=max_wait_time, log_level=log_level
         )
 
 
@@ -111,11 +111,11 @@ if __name__ == "__main__":
         choices = [True, False],
     )
     parser.add_argument(
-        "--wait_after_execute",
-        help = "Time to wait after executing each cell (in seconds, default: 5).",
+        "--max_wait_time",
+        help = "Max time to wait after executing each cell (in seconds, default: 10).",
         required = False,
         type = int,
-        default = 5,
+        default = 10,
     )
     parser.add_argument(
         "--log_level",

@@ -25,7 +25,8 @@ import os
 from os import path as os_path
 
 import nbformat
-import yaml
+
+from utils import load_dict_from_yaml_file
 
 
 logger = logging.getLogger(__name__)
@@ -57,37 +58,6 @@ def dict_combinations(input_dict: dict) -> list[dict]:
     return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
 
 
-def build_parameters_values(params_path: str) -> list[dict]:
-    """
-    Build a list of dictionaries containing all combinations of parameters based on
-    the provided params.yaml file.
-    Parameters
-    ----------
-    params_path : str
-        Path to the params.yaml file.
-    Returns
-    -------
-    list of dict
-        Each dictionary contains a unique combination of parameters.
-    Raises
-    ------
-    FileNotFoundError
-        If the params.yaml file does not exist.
-    ValueError
-        If the params.yaml file is empty or improperly formatted.
-    """
-    with open(params_path, "r") as f:
-        params = yaml.full_load(f)
-    if not params:
-        msg = f"No parameters found in {params_path}"
-        logger.error(msg)
-        raise ValueError(msg)
-
-    parameters_values = dict_combinations(params)
-
-    return parameters_values
-
-
 def clear_notebook_outputs(notebook: nbformat.NotebookNode) -> nbformat.NotebookNode:
     """
     Clear the outputs of all cells in a notebook.
@@ -107,7 +77,58 @@ def clear_notebook_outputs(notebook: nbformat.NotebookNode) -> nbformat.Notebook
     return notebook
 
 
-def generate_notebook(template_path: str, parameters_values: dict
+def inject_key_value_data(
+        template_nb: nbformat.NotebookNode, data_dict: dict, cell_tag: str, optional: bool = True
+) -> nbformat.NotebookNode:
+    """
+    Inject key-value data into a specific cell (tagged with `cell_tag`) in the template notebook.
+    Parameters
+    ----------
+    template_nb : nbformat.NotebookNode
+        The template notebook to modify.
+    data_dict : dict
+        A dictionary of key-value data to inject into the notebook.
+    cell_tag : str
+        The tag of the cell to modify.
+    optional : bool
+        Whether the cell is optional (default is True).
+    Returns
+    -------
+    nbformat.NotebookNode
+        The modified notebook with data injected.
+    Raises
+    ------
+    ValueError
+        If no cell with the specified tag is found in the template.ipynb.
+        If the cell is found with no content in the template.ipynb.
+    """
+    cell_source = ""
+    cell_found = False
+
+    # Modify the template.ipynb with the provided data
+    for cell in template_nb.cells:
+        # Get the nb cell tagged with the specified cell_tag
+        tags = cell.metadata.get("tags", [])
+        if cell_tag in tags:
+            cell_found = True
+            cell_source = cell.source
+            if not cell_source:
+                msg = f"Cell found with no content in the template.ipynb."
+                logger.error(msg)
+                raise ValueError(msg)
+            cell.source = cell_source.format(**data_dict)
+            break
+
+    if not cell_found and not optional:
+        msg = f"No cell with '{cell_tag}' tag found in the template.ipynb."
+        logger.error(msg)
+        raise ValueError(msg)
+
+    return template_nb
+
+
+def generate_notebook(
+        template_path: str, parameters_values: dict, configs: dict = None
 ) -> nbformat.NotebookNode:
     """
     Generate the parameterized notebook from a template.ipynb and a dictionary of parameters.
@@ -118,6 +139,9 @@ def generate_notebook(template_path: str, parameters_values: dict
     parameters_values : dict
         Dictionary containing the parameters to replace in the template.ipynb.
         Example keys: 'image_pixel_side_value', 'viewport_pixel_size_value', 'n_images_value'.
+    configs : dict optional
+        Dictionary containing the configurations to replace in the template.ipynb.
+        Example keys: 'rgb_border_color_triplet_value'.
     Returns
     -------
     nbformat.NotebookNode
@@ -133,32 +157,27 @@ def generate_notebook(template_path: str, parameters_values: dict
 
     template_nb = clear_notebook_outputs(template_nb)
 
-    parameters_source = ""
-    parameters_cell_found = False
+    template_nb = inject_key_value_data(
+        template_nb=template_nb,
+        data_dict=parameters_values,
+        cell_tag="parameters",
+        optional=False,
+    )
 
-    # Modify the template.ipynb with the provided parameters
-    for cell in template_nb.cells:
-        # Get the nb cell tagged as "parameters"
-        tags = cell.metadata.get("tags", [])
-        if "parameters" in tags:
-            parameters_cell_found = True
-            parameters_source = cell.source
-            if not parameters_source:
-                msg = "Parameters cell found with no content in the template.ipynb."
-                logger.error(msg)
-                raise ValueError(msg)
-            cell.source = parameters_source.format(**parameters_values)
-            break
-
-    if not parameters_cell_found:
-        msg = "No cell with 'parameters' tag found in the template.ipynb."
-        logger.error(msg)
-        raise ValueError(msg)
+    if configs:
+        template_nb = inject_key_value_data(
+            template_nb=template_nb,
+            data_dict=configs,
+            cell_tag="configurations",
+            optional=True,
+        )
 
     return template_nb
 
 
-def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
+def generate_notebooks(
+        input_dir_path: str, configs_path: str, log_level: str = "INFO"
+) -> list[str]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.yaml, and save them to
     the "notebooks" directory.
@@ -166,6 +185,8 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
     ----------
     input_dir_path : str
         Path to the directory containing the template.ipynb and params.yaml files.
+    configs_path : str
+        Path to the configs.yaml file.
     log_level : str, optional
         Logging level (default is "INFO").
     Raises
@@ -198,12 +219,23 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
         logger.error(msg)
         raise FileNotFoundError(msg)
 
+    # Check if the configs file exists, load configurations, else no sweat
+    if not os_path.isfile(configs_path):
+        msg = f"Configs file does not exist: {configs_path}"
+        logger.warning(msg)
+        configs = None
+    else:
+        configs = load_dict_from_yaml_file(configs_path)
+
     # Ensure the output directory exists
     if not os_path.isdir(output_dir_path):
         os.makedirs(output_dir_path)
 
+    # Load parameters
+    params = load_dict_from_yaml_file(params_path)
+
     # Generate all combinations of parameters
-    parameters_combinations = build_parameters_values(params_path)
+    parameters_combinations = dict_combinations(params)
 
     # Iterate over each combination of parameters and generate the notebooks
     logger.info("Generating profiler notebooks...")
@@ -229,6 +261,7 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
         parametrized_nb = generate_notebook(
             template_path=template_path,
             parameters_values=parameters_values,
+            configs=configs,
         )
 
         # Write the modified notebook to the output path
@@ -252,6 +285,13 @@ if __name__ == "__main__":
         help = "Path to the directory containing the template.ipynb and params.yaml files.",
         required = True,
         type = str,
+    )
+    parser.add_argument(
+        "--configs_path",
+        help = "Path to the configs.yaml file.",
+        required = False,
+        type = str,
+        default="configs.yaml",
     )
     parser.add_argument(
         "--log_level",
