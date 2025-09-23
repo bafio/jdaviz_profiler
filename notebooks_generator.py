@@ -127,9 +127,7 @@ def inject_key_value_data(
     return template_nb
 
 
-def generate_notebook(
-        template_path: str, parameters_values: dict, configs: dict = None
-) -> nbformat.NotebookNode:
+def generate_notebook(template_path: str, parameters_values: dict) -> nbformat.NotebookNode:
     """
     Generate the parameterized notebook from a template.ipynb and a dictionary of parameters.
     Parameters
@@ -139,9 +137,6 @@ def generate_notebook(
     parameters_values : dict
         Dictionary containing the parameters to replace in the template.ipynb.
         Example keys: 'image_pixel_side_value', 'viewport_pixel_size_value', 'n_images_value'.
-    configs : dict optional
-        Dictionary containing the configurations to replace in the template.ipynb.
-        Example keys: 'rgb_border_color_triplet_value'.
     Returns
     -------
     nbformat.NotebookNode
@@ -164,20 +159,10 @@ def generate_notebook(
         optional=False,
     )
 
-    if configs:
-        template_nb = inject_key_value_data(
-            template_nb=template_nb,
-            data_dict=configs,
-            cell_tag="configurations",
-            optional=True,
-        )
-
     return template_nb
 
 
-def generate_notebooks(
-        input_dir_path: str, configs_path: str, log_level: str = "INFO"
-) -> list[str]:
+def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.yaml, and save them to
     the "notebooks" directory.
@@ -185,8 +170,6 @@ def generate_notebooks(
     ----------
     input_dir_path : str
         Path to the directory containing the template.ipynb and params.yaml files.
-    configs_path : str
-        Path to the configs.yaml file.
     log_level : str, optional
         Logging level (default is "INFO").
     Raises
@@ -218,14 +201,6 @@ def generate_notebooks(
         msg = f"Params file does not exist: {params_path}"
         logger.error(msg)
         raise FileNotFoundError(msg)
-
-    # Check if the configs file exists, load configurations, else no sweat
-    if os_path.isfile(configs_path):
-        configs = load_dict_from_yaml_file(configs_path)
-    else:
-        msg = f"Configs file does not exist: {configs_path}"
-        logger.warning(msg)
-        configs = None
 
     # Ensure the output directory exists
     if not os_path.isdir(output_dir_path):
@@ -261,7 +236,6 @@ def generate_notebooks(
         parametrized_nb = generate_notebook(
             template_path=template_path,
             parameters_values=parameters_values,
-            configs=configs,
         )
 
         # Write the modified notebook to the output path
@@ -287,15 +261,10 @@ if __name__ == "__main__":
         type = str,
     )
     parser.add_argument(
-        "--configs_path",
-        help = "Path to the configs.yaml file.",
-        required = False,
-        type = str,
-        default="configs.yaml",
-    )
-    parser.add_argument(
         "--log_level",
         help="Set the logging level (default: INFO).",
+        required = False,
+        type = str,
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )

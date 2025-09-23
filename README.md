@@ -76,6 +76,7 @@ Python 3.12 or later is supported.
 - `pillow`
 - `playwright`
 - `requests`
+- `nbformat`
 - `PyYAML`
 
 

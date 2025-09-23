@@ -12,7 +12,6 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 import requests
 import time
 from io import BytesIO
@@ -20,12 +19,9 @@ from os import path as os_path
 
 from playwright.async_api import async_playwright, ElementHandle
 from playwright.async_api._context_manager import PlaywrightContextManager
+from playwright.async_api._generated import Browser, BrowserContext, Page
 from PIL import Image
 
-from utils import load_dict_from_yaml_file
-
-
-type ElementHandleList = list[ElementHandle]
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -38,9 +34,6 @@ logger.addHandler(console_handler)
 
 class Profiler:
     """Class to profile a Jupyter notebook using Playwright."""
-
-    # Key in the configs dict that contains the RGB border color triplet value
-    RGB_BORDER_COLOR_TRIPLET_KEY = "rgb_border_color_triplet_value"
 
     # The width and height to set for the browser viewport to make the page really tall
     # to avoid scrollbars and scrolling issues
@@ -55,13 +48,16 @@ class Profiler:
     # Selector for all code cells in the notebook
     NB_CELLS_SELECTOR = ".jp-WindowedPanel-viewport>.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell"
 
+    # Selector for the jdaviz app viz element
+    VIZ_ELEMENT_SELECTOR = ".jdaviz.imviz"
+
 
     def __init__(
             self, playwright: PlaywrightContextManager, url: str, headless: str, max_wait_time: int,
-            configs: dict,
+            screenshots_dir_path: str = None
         ) -> None:
         """
-        Initialize the Profiler with Playwright, URL, headless mode, wait time, and configurations.
+        Initialize the Profiler with Playwright, URL, headless mode, and wait time.
         Parameters
         ----------
         playwright : PlaywrightContextManager
@@ -72,20 +68,19 @@ class Profiler:
             Whether to run in headless mode.
         max_wait_time : int
             Time to wait after executing each cell (in seconds).
-        configs : dict
-            Dictionary containing the configurations for the notebook.
+        screenshots_dir_path : str, optional
+            Path to the directory to where screenshots will be stored, if not passed as an argument,
+            screenshots will not be logged.
         """
         self._playwright = playwright
         self._url = url
         self._headless = headless
         self._max_wait_time = max_wait_time
-        self._configs = configs
-        rgb_border_color_triplet_value = self.configs[self.RGB_BORDER_COLOR_TRIPLET_KEY]
-        self._viz_cell_regex = fr"border-color: rgb\({rgb_border_color_triplet_value}\)"
-        self._viz_cell = None
-        self.browser = None
-        self.context = None
-        self.page = None
+        self._screenshots_dir_path = screenshots_dir_path
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._viz_element = None
 
 
     @property
@@ -109,18 +104,28 @@ class Profiler:
 
 
     @property
-    def configs(self) -> dict:
-        return self._configs
+    def screenshots_dir_path(self) -> int:
+        return self._screenshots_dir_path
 
 
     @property
-    def viz_cell_regex(self) -> str:
-        return self._viz_cell_regex
+    def browser(self) -> Browser:
+        return self._browser
 
 
     @property
-    def viz_cell(self) -> "VizCell":
-        return self._viz_cell
+    def context(self) -> BrowserContext:
+        return self._context
+
+
+    @property
+    def page(self) -> Page:
+        return self._page
+
+
+    @property
+    def viz_element(self) -> "VizElement":
+        return self._viz_element
 
 
     async def setup(self) -> None:
@@ -128,9 +133,9 @@ class Profiler:
         Set up the Playwright browser and page.
         """
         # Launch the browser and create a new page
-        self.browser = await self.playwright.chromium.launch(headless=self.headless)
-        self.context = await self.browser.new_context()
-        self.page = await self.context.new_page()
+        self._browser = await self.playwright.chromium.launch(headless=self.headless)
+        self._context = await self.browser.new_context()
+        self._page = await self.context.new_page()
 
         # Apply custom viewport size
         await self.page.set_viewport_size(self.VIEWPORT_SIZE)
@@ -179,30 +184,45 @@ class Profiler:
         logger.info("Profiling completed.")
 
 
-    async def detect_viz_cell(self, output_cells: ElementHandleList) -> None:
+    async def detect_viz_element(self) -> None:
         """
-        Detect the viz cell from the list of output cells.
+        Detect the viz element based on the CSS classes given to the viz app.
+        """
+        viz_element = await self.page.query_selector(self.VIZ_ELEMENT_SELECTOR)
+        if viz_element:
+            self._viz_element = VizElement(element=viz_element, profiler=self)
+            logger.debug("Viz element detected and assigned")
+
+
+    async def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
+        """
+        Save screenshots of a cell to a determined directory path.
         Parameters
         ----------
-        output_cells : ElementHandleList
-            The list of output cell elements.
+        cell_index : int
+            The index of the cell.
+        screenshots : list[bytes]
+            The list of screenshot (in bytes) to save.
         """
-        # Look for the viz cell among the output cells
-        for output_cell in output_cells:
-            # Check if the output cell is visible
-            output_cell_is_visible = await output_cell.is_visible()
-            # If the output cell is not visible, skip it
-            if not output_cell_is_visible:
-                continue
-            # Look for the viz cell by checking the style attribute of its children
-            children = await output_cell.query_selector_all("*")
-            for child in children:
-                style = await child.get_attribute("style")
-                if style and re.search(self.viz_cell_regex, style):
-                    # We found the viz cell, store it and return
-                    self._viz_cell = VizCell(output_cell)
-                    logger.debug("Viz cell detected")
-                    return
+        if self.screenshots_dir_path is None:
+            logger.debug("Not logging screenshots")
+            return
+
+        # Log screenshots
+        logger.debug("Logging screenshots...")
+
+        file_path_name = os_path.join(
+            self.screenshots_dir_path,
+            f"screenshot_cell{cell_index}"
+        )
+
+        for i, screenshot in enumerate(screenshots):
+            # Save first screenshot
+            image_file_path_name = f"{file_path_name}_{i}.png"
+            image = Image.open(BytesIO(screenshot))
+            image.save(image_file_path_name)
+
+        logger.debug("Screenshots logged")
 
 
     async def collect_executable_cells(self) -> list["ExecutableCell"]:
@@ -234,18 +254,21 @@ class Profiler:
         logger.debug("Browser closed")
 
 
-class VizCell:
-    """Class representing the viz cell in a Jupyter notebook."""
+class VizElement:
+    """Class representing the viz element in a Jupyter notebook."""
 
-    def __init__(self, element: ElementHandle = None) -> None:
+    def __init__(self, element: ElementHandle, profiler: Profiler) -> None:
         """
-        Initialize the VizCell with a Playwright ElementHandle.
+        Initialize the VizElement with a Playwright ElementHandle.
         Parameters
         ----------
         element : ElementHandle
-            The Playwright ElementHandle representing the viz cell.
+            The Playwright ElementHandle representing the viz element.
+        profiler : Profiler
+            The Profiler instance.
         """
         self._element = element
+        self._profiler = profiler
 
 
     @property
@@ -253,53 +276,43 @@ class VizCell:
         return self._element
 
 
-    async def is_stable(self) -> bool:
+    @property
+    def profiler(self) -> Profiler:
+        return self._profiler
+
+
+    async def is_stable(self, cell_index: int) -> bool:
         """
-        Check if the viz cell is stable (i.e., not changing).
+        Check if the viz element is stable (i.e., not changing).
         Returns
         -------
         bool
-            True if the viz cell is stable, False otherwise.
+            True if the viz element is stable, False otherwise.
         """
         if self.element is None:
-            logger.debug("Viz cell element is None, cannot be stable")
+            logger.debug("Viz element element is None, cannot be stable")
             return False
 
-        # Take a screenshot of the viz cell
-        screenshot1 = await self.element.screenshot()
+        # Take a screenshot of the viz element
+        screenshot_before = await self.element.screenshot()
 
         # Wait a short period before taking another screenshot
         await asyncio.sleep(0.5)
 
-        # Take another screenshot of the viz cell
-        screenshot2 = await self.element.screenshot()
+        # Take another screenshot of the viz element
+        screenshot_after = await self.element.screenshot()
 
-        # image1 = Image.open(BytesIO(screenshot1))
-        # image2 = Image.open(BytesIO(screenshot2))
-        # image1.save("screenshot1.png")
-        # image2.save("screenshot2.png")
+        # Log screenshots
+        await self.profiler.log_screenshots(cell_index, [screenshot_before, screenshot_after])
 
         # Compare the two screenshots
-        screenshots_are_the_same = screenshot1 == screenshot2
+        screenshots_are_the_same = screenshot_before == screenshot_after
         logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
         return screenshots_are_the_same
 
 
 class ExecutableCell:
     """Class representing an executable cell in a Jupyter notebook."""
-
-    # Selector for all output cells in a code cell
-    OUTPUT_CELLS_SELECTOR = ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
-
-    # Selector for all text output cells in a code cell
-    OUTPUT_CELLS_TEXT_SELECTOR = ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
-
-    # Regex group name for the time elapsed value
-    CELL_OUTPUT_REGEX_GROUP_NAME = "time_elapsed"
-
-    # Regex to identify the cell output containing the time elapsed information
-    CELL_OUTPUT_REGEX = fr'^.*cell\stime\selapsed:\s(?P<{CELL_OUTPUT_REGEX_GROUP_NAME}>\d+\.\d+)$'
-
 
     def __init__(self, cell: ElementHandle, index: int, profiler: Profiler) -> None:
         """
@@ -341,77 +354,31 @@ class ExecutableCell:
             await self.cell.focus()
             # Execute the cell
             await self.profiler.page.keyboard.press('Shift+Enter')
-            # Initialize variables to track the viz cell and elapsed time
-            viz_cell_is_stable, timer, time_elapsed = False, time.time(), 0
+            # Initialize variables to track the viz element and elapsed time
+            viz_is_stable, timer, time_elapsed = False, time.time(), 0
 
-            output_cells = None
-            while time_elapsed < self.profiler.max_wait_time:
-                # If we have the viz cell, check if it's stable
-                if self.profiler.viz_cell:
-                    logger.debug("We already have the viz cell, checking if it's stable...")
-                    viz_cell_is_stable = await self.profiler.viz_cell.is_stable()
-                    logger.debug(f"viz_cell_is_stable: {viz_cell_is_stable}")
-                    if viz_cell_is_stable:
-                        # If the viz cell is stable, we can stop looping, take the time and move on
-                        logger.debug("Viz cell is stable, stopping the wait loop...")
-                        time_elapsed = time.time() - timer
-                        await self.save_execution_time(time_elapsed, viz_cell_is_stable)
-                        return
+            # output_cells = None
+            while time_elapsed < self.profiler.max_wait_time and not viz_is_stable:
+                # If we have the viz element, check if it's stable
+                if self.profiler.viz_element:
+                    logger.debug("We already have the viz element, checking if it's stable...")
+                    viz_is_stable = await self.profiler.viz_element.is_stable(self.index)
                 else:
                     # Wait a bit before checking again
-                    logger.debug("Waiting for the output cells to appear...")
+                    logger.debug("Waiting for the viz element to appear...")
                     await asyncio.sleep(0.5)
-                    # Look for the viz cell in the outputs of the current cell
-                    output_cells = await self.cell.query_selector_all(self.OUTPUT_CELLS_SELECTOR)
-                    logger.debug(f"Found {len(output_cells)} output cells")
-                    # if we found output cells, look for the viz cell among them
-                    if output_cells:
-                        logger.debug("Looking for the viz cell among the output cells...")
-                        await self.profiler.detect_viz_cell(output_cells)
-                # In this case, if we don't have a viz cell or we have a not stable viz cell,
-                # we take the time elapsed and check if we reached the max wait time
+                    # Look for the viz element in the page
+                    logger.debug("Looking for the viz element in the page...")
+                    await self.profiler.detect_viz_element()
                 time_elapsed = time.time() - timer
 
-            # save time elapsed from the output cells
-            await self.save_execution_time(time_elapsed, viz_cell_is_stable, output_cells)
+            # save time elapsed only if coming from a stable viz element, otherwise count as 0
+            self.execution_time = time_elapsed if viz_is_stable else 0
+            # Log the time elapsed for the cell execution
+            logger.info(f"Cell {self.index} completed in {self.execution_time:.2f} seconds")
 
         except Exception as e:
             logger.exception(f"An error occurred while executing cell {self.index}: {e}")
-
-
-    async def save_execution_time(
-            self, time_elapsed: float, viz_cell_is_stable: bool,
-            output_cells: ElementHandleList = None
-        ) -> None:
-        """
-        Save the time for a cell execution.
-        Parameters
-        ----------
-        time_elapsed : float
-            The time elapsed for the cell execution.
-        viz_cell_is_stable : bool
-            Whether the viz cell is stable.
-        output_cells : ElementHandleList, optional
-            The list of output cell elements (default is None).
-        """
-        if not viz_cell_is_stable and output_cells:
-            # try to gather time elapsed from the cell output
-            logger.debug("Trying to gather time elapsed from the cell output...")
-            logger.debug(f"Found {len(output_cells)} output cells")
-            # filter to only text outputs
-            text_output_cells = await output_cells[0].query_selector_all(
-                self.OUTPUT_CELLS_TEXT_SELECTOR
-            )
-            logger.debug(f"Found {len(text_output_cells)} text output cells")
-            if text_output_cells:
-                output_txt = await text_output_cells[0].inner_text()
-                match = re.search(self.CELL_OUTPUT_REGEX, output_txt)
-                if match:
-                    time_elapsed = float(match.group(self.CELL_OUTPUT_REGEX_GROUP_NAME))
-
-        self.execution_time = time_elapsed
-        # Log the time elapsed for the cell execution
-        logger.info(f"Cell {self.index} completed in {self.execution_time:.2f} seconds")
 
 
 class JupyterLabHelper:
@@ -626,7 +593,7 @@ class JupyterLabHelper:
 
 async def profile_notebook(
         url: str, token: str, kernel_name: str, nb_input_path: str, headless: bool,
-        max_wait_time: int, configs_path: str, log_level: str = "INFO"
+        max_wait_time: int, screenshots_dir_path: str = None, log_level: str = "INFO"
 ) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
@@ -644,8 +611,9 @@ async def profile_notebook(
         Whether to run in headless mode.
     max_wait_time : int
         Max time to wait after executing each cell (in seconds).
-    configs_path : str
-        Path to the configs.yaml file.
+    screenshots_dir_path : str, optional
+        Path to the directory to where screenshots will be stored, if not passed as an argument,
+        screenshots will not be logged.
     log_level : str, optional
         Set the logging level (default: INFO).
     Raises
@@ -667,17 +635,9 @@ async def profile_notebook(
         f"Input Notebook Path: {nb_input_path} -- "
         f"Headless: {headless} -- "
         f"Max Wait Time: {max_wait_time} -- "
-        f"Configs Path: {configs_path} -- "
+        f"Screenshots Dir Path: {screenshots_dir_path} -- "
         f"Log Level: {log_level}"
     )
-
-    # Check if the configs file exists, load configurations, else no sweat
-    if os_path.isfile(configs_path):
-        configs = load_dict_from_yaml_file(configs_path)
-        logger.debug(f"Loaded configs: {configs}")
-    else:
-        configs = None
-        logger.warning(f"Configs file does not exist: {configs_path}")
 
     # Initialize JupyterLab helper and clear any existing sessions
     jupyter_lab_helper = JupyterLabHelper(
@@ -697,7 +657,7 @@ async def profile_notebook(
             url=jupyter_lab_helper.notebook_url,
             headless=headless,
             max_wait_time=max_wait_time,
-            configs=configs,
+            screenshots_dir_path=screenshots_dir_path,
         )
         await profiler.setup()
         await profiler.run()
@@ -754,15 +714,17 @@ if __name__ == "__main__":
         default = 10,
     )
     parser.add_argument(
-        "--configs_path",
-        help = "Path to the configs.yaml file.",
+        "--screenshots_dir_path",
+        help = "Path to the directory to where screenshots will be stored (default: None).",
         required = False,
         type = str,
-        default="configs.yaml",
+        default = None,
     )
     parser.add_argument(
         "--log_level",
         help = "Set the logging level (default: INFO).",
+        required = False,
+        type = str,
         default = "INFO",
         choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
