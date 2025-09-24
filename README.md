@@ -54,6 +54,14 @@ pip install -e .
 Python 3.12 or later is supported.
 
 
+### Pre-commit hook
+
+To install the pre-commit hook, simply run:
+```bash
+pre-commit install
+```
+
+
 ## Usage
 
 - Generate notebooks:
@@ -62,7 +70,7 @@ Python 3.12 or later is supported.
     ```
 - Profile notebooks:
     ```bash
-    python profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
+    python notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
     ```
 - Or run both steps together:
     ```bash
@@ -78,6 +86,8 @@ Python 3.12 or later is supported.
 - `requests`
 - `nbformat`
 - `PyYAML`
+- `ruff`
+- `pre-commit`
 
 
 ## License
