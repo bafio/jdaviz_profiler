@@ -11,8 +11,8 @@ Each parameter in the params.yaml file must have a corresponding placeholder in 
 template.ipynb file, and the placeholders must be unique having "_value" as suffix,
 e.g. `image_pixel_side_value` or `viewport_pixel_size_value`.
 The generated parameterized notebooks will be saved in the "notebooks" directory.
-An example of how to structure this, and the template.ipynb and params.yaml files, is provided
-in the repository in imviz_images.
+An example of how to structure this, and the template.ipynb and params.yaml files, is
+provided in the repository in imviz_images.
 
 Usage:
 $> python notebooks_generator.py --input_dir_path <usecase path>
@@ -27,7 +27,6 @@ from os import path as os_path
 import nbformat
 
 from utils import load_dict_from_yaml_file
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -78,10 +77,14 @@ def clear_notebook_outputs(notebook: nbformat.NotebookNode) -> nbformat.Notebook
 
 
 def inject_key_value_data(
-        template_nb: nbformat.NotebookNode, data_dict: dict, cell_tag: str, optional: bool = True
+    template_nb: nbformat.NotebookNode,
+    data_dict: dict,
+    cell_tag: str,
+    optional: bool = True,
 ) -> nbformat.NotebookNode:
     """
-    Inject key-value data into a specific cell (tagged with `cell_tag`) in the template notebook.
+    Inject key-value data into a specific cell (tagged with `cell_tag`) in the template
+    notebook.
     Parameters
     ----------
     template_nb : nbformat.NotebookNode
@@ -113,7 +116,7 @@ def inject_key_value_data(
             cell_found = True
             cell_source = cell.source
             if not cell_source:
-                msg = f"Cell found with no content in the template.ipynb."
+                msg = "Cell found with no content in the template.ipynb."
                 logger.error(msg)
                 raise ValueError(msg)
             cell.source = cell_source.format(**data_dict)
@@ -127,16 +130,19 @@ def inject_key_value_data(
     return template_nb
 
 
-def generate_notebook(template_path: str, parameters_values: dict) -> nbformat.NotebookNode:
+def generate_notebook(
+    template_path: str, parameters_values: dict
+) -> nbformat.NotebookNode:
     """
-    Generate the parameterized notebook from a template.ipynb and a dictionary of parameters.
+    Generate the parameterized notebook from a template.ipynb and a dictionary of
+    parameters.
     Parameters
     ----------
     template_path : str
         Path to the template.ipynb file.
     parameters_values : dict
         Dictionary containing the parameters to replace in the template.ipynb.
-        Example keys: 'image_pixel_side_value', 'viewport_pixel_size_value', 'n_images_value'.
+        Example keys: 'image_pixel_side_value', 'viewport_pixel_size_value'.
     Returns
     -------
     nbformat.NotebookNode
@@ -164,8 +170,8 @@ def generate_notebook(template_path: str, parameters_values: dict) -> nbformat.N
 
 def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
     """
-    Generate the parameterized notebooks from a template.ipynb and params.yaml, and save them to
-    the "notebooks" directory.
+    Generate the parameterized notebooks from a template.ipynb and params.yaml, and
+    save them to the "notebooks" directory.
     Parameters
     ----------
     input_dir_path : str
@@ -220,7 +226,7 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
     for parameters_values in parameters_combinations:
         # Create the output path for the generated notebook
         nb_filename = nb_base_filename
-        for k,v in parameters_values.items():
+        for k, v in parameters_values.items():
             nb_filename = f"{nb_filename}-{k.removesuffix('_value')}{v}"
         nb_filename = f"{nb_filename}.ipynb"
         output_path = os_path.join(output_dir_path, nb_filename)
@@ -250,21 +256,24 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = (
-            "Script to generate the parameterized notebooks from a template.ipynb and params.yaml."
+        description=(
+            "Script to generate the parameterized notebooks from a template.ipynb and "
+            "params.yaml."
         )
     )
     parser.add_argument(
         "--input_dir_path",
-        help = "Path to the directory containing the template.ipynb and params.yaml files.",
-        required = True,
-        type = str,
+        help=(
+            "Path to the directory containing the template.ipynb and params.yaml files."
+        ),
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--log_level",
         help="Set the logging level (default: INFO).",
-        required = False,
-        type = str,
+        required=False,
+        type=str,
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )

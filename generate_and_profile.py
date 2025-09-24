@@ -4,17 +4,17 @@ Script to generate the parameterized notebooks from a template.ipynb and params.
 run the profiler on them.
 
 Usage:
-$> python generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> \
-    --token <API Token> --kernel_name <kernel name>
+$> python generate_and_profile.py --input_dir_path <usecase path> \
+    --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
 """
+
 import argparse
 import asyncio
 import logging
 from os.path import join as os_path_join
 
-from notebooks_generator import generate_notebooks
 from notebook_profiler import profile_notebook
-
+from notebooks_generator import generate_notebooks
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -26,8 +26,14 @@ logger.addHandler(console_handler)
 
 
 async def generate_and_profile(
-        input_dir_path: str, url: str, token: str, kernel_name: str, headless: bool,
-        max_wait_time: int, log_screenshots: bool = False, log_level: str = "INFO"
+    input_dir_path: str,
+    url: str,
+    token: str,
+    kernel_name: str,
+    headless: bool,
+    max_wait_time: int,
+    log_screenshots: bool = False,
+    log_level: str = "INFO",
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
@@ -64,7 +70,9 @@ async def generate_and_profile(
         f"Log Level: {log_level}"
     )
 
-    nb_input_paths = generate_notebooks(input_dir_path=input_dir_path, log_level=log_level)
+    nb_input_paths = generate_notebooks(
+        input_dir_path=input_dir_path, log_level=log_level
+    )
 
     if log_screenshots:
         screenshots_dir_path = os_path_join(input_dir_path, "screenshots")
@@ -75,73 +83,84 @@ async def generate_and_profile(
         logger.info(f"Profiling notebook: {nb_input_path}")
 
         await profile_notebook(
-            url=url, token=token, kernel_name=kernel_name, nb_input_path=nb_input_path,
-            headless=headless, max_wait_time=max_wait_time,
-            screenshots_dir_path=screenshots_dir_path, log_level=log_level
+            url=url,
+            token=token,
+            kernel_name=kernel_name,
+            nb_input_path=nb_input_path,
+            headless=headless,
+            max_wait_time=max_wait_time,
+            screenshots_dir_path=screenshots_dir_path,
+            log_level=log_level,
         )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description = (
+        description=(
             "Script to generate the profiler notebooks from a template and "
             "run the profiler on them."
         )
     )
     parser.add_argument(
         "--input_dir_path",
-        help = "Path to the directory containing the template notebook and params.yaml file.",
-        required = True,
-        type = str,
+        help=(
+            "Path to the directory containing the template notebook and params.yaml "
+            "file."
+        ),
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--url",
-        help = "The URL of the JupyterLab instance where the notebook is going to be profiled.",
-        required = True,
-        type = str,
+        help=(
+            "The URL of the JupyterLab instance where the notebook is going to be "
+            "profiled."
+        ),
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--token",
-        help = "The token to access the JupyterLab instance.",
-        required = True,
-        type = str,
+        help="The token to access the JupyterLab instance.",
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--kernel_name",
-        help = "The name of the kernel to use for the notebook.",
-        required = True,
-        type = str,
+        help="The name of the kernel to use for the notebook.",
+        required=True,
+        type=str,
     )
     parser.add_argument(
         "--headless",
-        help = "Whether to run in headless mode (default: False).",
-        required = False,
-        type = bool,
-        default = False,
-        choices = [True, False],
+        help="Whether to run in headless mode (default: False).",
+        required=False,
+        type=bool,
+        default=False,
+        choices=[True, False],
     )
     parser.add_argument(
         "--max_wait_time",
-        help = "Max time to wait after executing each cell (in seconds, default: 10).",
-        required = False,
-        type = int,
-        default = 10,
+        help="Max time to wait after executing each cell (in seconds, default: 10).",
+        required=False,
+        type=int,
+        default=10,
     )
     parser.add_argument(
         "--log_screenshots",
-        help = "Whether to log screenshots or not (default: False).",
-        required = False,
-        type = bool,
-        default = False,
-        choices = [True, False],
+        help="Whether to log screenshots or not (default: False).",
+        required=False,
+        type=bool,
+        default=False,
+        choices=[True, False],
     )
     parser.add_argument(
         "--log_level",
-        help = "Set the logging level (default: INFO).",
-        required = False,
-        type = str,
-        default = "INFO",
-        choices = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO).",
+        required=False,
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
     asyncio.run(generate_and_profile(**vars(parser.parse_args())))
