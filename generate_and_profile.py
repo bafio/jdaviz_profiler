@@ -10,7 +10,7 @@ $> python generate_and_profile.py --input_dir_path <usecase path> --url <Jupyter
 import argparse
 import asyncio
 import logging
-from os import path as os_path
+from os.path import join as os_path_join
 
 from notebooks_generator import generate_notebooks
 from notebook_profiler import profile_notebook
@@ -27,7 +27,7 @@ logger.addHandler(console_handler)
 
 async def generate_and_profile(
         input_dir_path: str, url: str, token: str, kernel_name: str, headless: bool,
-        max_wait_time: int, screenshots_dir_name: str = None, log_level: str = "INFO"
+        max_wait_time: int, log_screenshots: bool = False, log_level: str = "INFO"
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
@@ -45,9 +45,8 @@ async def generate_and_profile(
         Whether to run in headless mode.
     max_wait_time : int
         Max time to wait after executing each cell (in seconds).
-    screenshots_dir_name : str, optional
-        The name of the directory to where screenshots will be stored, if not passed as an argument,
-        screenshots will not be logged.
+    log_screenshots : bool, optional
+        Whether to log screenshots or not (default: False).
     log_level : str, optional
         Set the logging level (default: "INFO").
     """
@@ -61,14 +60,14 @@ async def generate_and_profile(
         f"Kernel Name: {kernel_name} -- "
         f"Headless: {headless} -- "
         f"Max Wait Time: {max_wait_time} -- "
-        f"Screenshots Dir Name: {screenshots_dir_name} -- "
+        f"Log Screenshots: {log_screenshots} -- "
         f"Log Level: {log_level}"
     )
 
     nb_input_paths = generate_notebooks(input_dir_path=input_dir_path, log_level=log_level)
 
-    if screenshots_dir_name:
-        screenshots_dir_path = os_path.join(input_dir_path, screenshots_dir_name)
+    if log_screenshots:
+        screenshots_dir_path = os_path_join(input_dir_path, "screenshots")
     else:
         screenshots_dir_path = None
 
@@ -129,11 +128,12 @@ if __name__ == "__main__":
         default = 10,
     )
     parser.add_argument(
-        "--screenshots_dir_name",
-        help = "The name of the directory to where screenshots will be stored (default: None).",
+        "--log_screenshots",
+        help = "Whether to log screenshots or not (default: False).",
         required = False,
-        type = str,
-        default = None,
+        type = bool,
+        default = False,
+        choices = [True, False],
     )
     parser.add_argument(
         "--log_level",

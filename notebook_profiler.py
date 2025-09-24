@@ -13,9 +13,10 @@ import asyncio
 import json
 import logging
 import requests
-import time
 from io import BytesIO
-from os import path as os_path
+from os import makedirs
+from os.path import basename, join as os_path_join, splitext
+from time import gmtime, perf_counter_ns, strftime, time
 
 from playwright.async_api import async_playwright, ElementHandle
 from playwright.async_api._context_manager import PlaywrightContextManager
@@ -30,6 +31,133 @@ console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 logger.addHandler(console_handler)
+
+
+class VizElement:
+    """Class representing the viz element in a Jupyter notebook."""
+
+    def __init__(self, element: ElementHandle, profiler: "Profiler") -> None:
+        """
+        Initialize the VizElement with a Playwright ElementHandle.
+        Parameters
+        ----------
+        element : ElementHandle
+            The Playwright ElementHandle representing the viz element.
+        profiler : Profiler
+            The Profiler instance.
+        """
+        self._element = element
+        self._profiler = profiler
+
+
+    @property
+    def element(self) -> ElementHandle:
+        return self._element
+
+
+    @property
+    def profiler(self) -> "Profiler":
+        return self._profiler
+
+
+    async def is_stable(self, cell_index: int) -> bool:
+        """
+        Check if the viz element is stable (i.e., not changing).
+        Returns
+        -------
+        bool
+            True if the viz element is stable, False otherwise.
+        """
+        if self.element is None:
+            logger.debug("Viz element element is None, cannot be stable")
+            return False
+
+        # Take a screenshot of the viz element
+        screenshot_before = await self.element.screenshot()
+
+        # Wait a short period before taking another screenshot
+        await asyncio.sleep(0.5)
+
+        # Take another screenshot of the viz element
+        screenshot_after = await self.element.screenshot()
+
+        # Log screenshots
+        await self.profiler.log_screenshots(cell_index, [screenshot_before, screenshot_after])
+
+        # Compare the two screenshots
+        screenshots_are_the_same = screenshot_before == screenshot_after
+        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
+        return screenshots_are_the_same
+
+
+class ExecutableCell:
+    """Class representing an executable cell in a Jupyter notebook."""
+
+    def __init__(self, cell: ElementHandle, index: int, profiler: "Profiler") -> None:
+        """
+        Initialize the ExecutableCell with a Playwright ElementHandle and an optional index.
+        Parameters
+        ----------
+        cell : ElementHandle
+            The Playwright ElementHandle representing the cell.
+        index : int
+            The index of the cell.
+        profiler : Profiler
+            The Profiler instance.
+        """
+        self._cell = cell
+        self._index = index
+        self._profiler = profiler
+        self.execution_time = 0
+
+
+    @property
+    def cell(self) -> ElementHandle:
+        return self._cell
+
+
+    @property
+    def index(self) -> int:
+        return self._index
+
+
+    @property
+    def profiler(self) -> "Profiler":
+        return self._profiler
+
+
+    async def execute(self) -> None:
+        try:
+            logger.info(f"Executing cell {self.index}")
+            # Focus on the cell
+            await self.cell.focus()
+            # Execute the cell
+            await self.profiler.page.keyboard.press('Shift+Enter')
+            # Initialize variables to track the viz element and elapsed time
+            viz_is_stable, timer, time_elapsed = False, time(), 0
+
+            # output_cells = None
+            while time_elapsed < self.profiler.max_wait_time and not viz_is_stable:
+                # If we have the viz element, check if it's stable
+                if self.profiler.viz_element:
+                    logger.debug("We already have the viz element, checking if it's stable...")
+                    viz_is_stable = await self.profiler.viz_element.is_stable(self.index)
+                else:
+                    # Wait a bit before checking again
+                    logger.debug("Waiting for the viz element to appear...")
+                    await asyncio.sleep(0.5)
+                    # Look for the viz element in the page
+                    logger.debug("Looking for the viz element in the page...")
+                    await self.profiler.detect_viz_element()
+                time_elapsed = time() - timer
+
+            # save time elapsed only if coming from a stable viz element, otherwise count as 0
+            self.execution_time = time_elapsed if viz_is_stable else 0
+            # Log the time elapsed for the cell execution
+            logger.info(f"Cell {self.index} completed in {self.execution_time:.2f} seconds")
+
+        except Exception as e:
+            logger.exception(f"An error occurred while executing cell {self.index}: {e}")
 
 
 class Profiler:
@@ -124,7 +252,7 @@ class Profiler:
 
 
     @property
-    def viz_element(self) -> "VizElement":
+    def viz_element(self) -> VizElement | None:
         return self._viz_element
 
 
@@ -204,28 +332,33 @@ class Profiler:
         screenshots : list[bytes]
             The list of screenshot (in bytes) to save.
         """
-        if self.screenshots_dir_path is None:
-            logger.debug("Not logging screenshots")
-            return
+        try:
+            if self.screenshots_dir_path is None:
+                logger.debug("Not logging screenshots")
+                return
 
-        # Log screenshots
-        logger.debug("Logging screenshots...")
+            # Log screenshots
+            logger.debug("Logging screenshots...")
 
-        file_path_name = os_path.join(
-            self.screenshots_dir_path,
-            f"screenshot_cell{cell_index}"
-        )
+            file_path_name = os_path_join(
+                self.screenshots_dir_path,
+                f"{perf_counter_ns()}_cell{cell_index}"
+            )
 
-        for i, screenshot in enumerate(screenshots):
-            # Save first screenshot
-            image_file_path_name = f"{file_path_name}_{i}.png"
-            image = Image.open(BytesIO(screenshot))
-            image.save(image_file_path_name)
+            for i, screenshot in enumerate(screenshots):
+                # Save first screenshot
+                image_file_path_name = f"{file_path_name}_{i}.png"
+                image = Image.open(BytesIO(screenshot))
+                image.save(image_file_path_name)
 
-        logger.debug("Screenshots logged")
+            logger.debug("Screenshots logged")
+
+        except Exception as e:
+            # In case of an exception: log it and move on (do not block!)
+            logger.exception(f"An exception occurred during screenshots logging: {e}")
 
 
-    async def collect_executable_cells(self) -> list["ExecutableCell"]:
+    async def collect_executable_cells(self) -> list[ExecutableCell]:
         """
         Collect all code cells in the notebook and return them as a list of
         ExecutableCell instances.
@@ -252,133 +385,6 @@ class Profiler:
         logger.debug("Browser context closed")
         await self.browser.close()
         logger.debug("Browser closed")
-
-
-class VizElement:
-    """Class representing the viz element in a Jupyter notebook."""
-
-    def __init__(self, element: ElementHandle, profiler: Profiler) -> None:
-        """
-        Initialize the VizElement with a Playwright ElementHandle.
-        Parameters
-        ----------
-        element : ElementHandle
-            The Playwright ElementHandle representing the viz element.
-        profiler : Profiler
-            The Profiler instance.
-        """
-        self._element = element
-        self._profiler = profiler
-
-
-    @property
-    def element(self) -> ElementHandle:
-        return self._element
-
-
-    @property
-    def profiler(self) -> Profiler:
-        return self._profiler
-
-
-    async def is_stable(self, cell_index: int) -> bool:
-        """
-        Check if the viz element is stable (i.e., not changing).
-        Returns
-        -------
-        bool
-            True if the viz element is stable, False otherwise.
-        """
-        if self.element is None:
-            logger.debug("Viz element element is None, cannot be stable")
-            return False
-
-        # Take a screenshot of the viz element
-        screenshot_before = await self.element.screenshot()
-
-        # Wait a short period before taking another screenshot
-        await asyncio.sleep(0.5)
-
-        # Take another screenshot of the viz element
-        screenshot_after = await self.element.screenshot()
-
-        # Log screenshots
-        await self.profiler.log_screenshots(cell_index, [screenshot_before, screenshot_after])
-
-        # Compare the two screenshots
-        screenshots_are_the_same = screenshot_before == screenshot_after
-        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
-        return screenshots_are_the_same
-
-
-class ExecutableCell:
-    """Class representing an executable cell in a Jupyter notebook."""
-
-    def __init__(self, cell: ElementHandle, index: int, profiler: Profiler) -> None:
-        """
-        Initialize the ExecutableCell with a Playwright ElementHandle and an optional index.
-        Parameters
-        ----------
-        cell : ElementHandle
-            The Playwright ElementHandle representing the cell.
-        index : int
-            The index of the cell.
-        profiler : Profiler
-            The Profiler instance.
-        """
-        self._cell = cell
-        self._index = index
-        self._profiler = profiler
-        self.execution_time = 0
-
-
-    @property
-    def cell(self) -> ElementHandle:
-        return self._cell
-
-
-    @property
-    def index(self) -> int:
-        return self._index
-
-
-    @property
-    def profiler(self) -> Profiler:
-        return self._profiler
-
-
-    async def execute(self) -> None:
-        try:
-            logger.info(f"Executing cell {self.index}")
-            # Focus on the cell
-            await self.cell.focus()
-            # Execute the cell
-            await self.profiler.page.keyboard.press('Shift+Enter')
-            # Initialize variables to track the viz element and elapsed time
-            viz_is_stable, timer, time_elapsed = False, time.time(), 0
-
-            # output_cells = None
-            while time_elapsed < self.profiler.max_wait_time and not viz_is_stable:
-                # If we have the viz element, check if it's stable
-                if self.profiler.viz_element:
-                    logger.debug("We already have the viz element, checking if it's stable...")
-                    viz_is_stable = await self.profiler.viz_element.is_stable(self.index)
-                else:
-                    # Wait a bit before checking again
-                    logger.debug("Waiting for the viz element to appear...")
-                    await asyncio.sleep(0.5)
-                    # Look for the viz element in the page
-                    logger.debug("Looking for the viz element in the page...")
-                    await self.profiler.detect_viz_element()
-                time_elapsed = time.time() - timer
-
-            # save time elapsed only if coming from a stable viz element, otherwise count as 0
-            self.execution_time = time_elapsed if viz_is_stable else 0
-            # Log the time elapsed for the cell execution
-            logger.info(f"Cell {self.index} completed in {self.execution_time:.2f} seconds")
-
-        except Exception as e:
-            logger.exception(f"An error occurred while executing cell {self.index}: {e}")
 
 
 class JupyterLabHelper:
@@ -593,7 +599,7 @@ class JupyterLabHelper:
 
 async def profile_notebook(
         url: str, token: str, kernel_name: str, nb_input_path: str, headless: bool,
-        max_wait_time: int, screenshots_dir_path: str = None, log_level: str = "INFO"
+        max_wait_time: int, screenshots_dir_path: str | None = None, log_level: str = "INFO"
 ) -> None:
     """
     Profile the notebook at the specified URL using Playwright.
@@ -649,6 +655,16 @@ async def profile_notebook(
     await jupyter_lab_helper.clear_jupyterlab_sessions()
     await jupyter_lab_helper.restart_kernel()
     await jupyter_lab_helper.upload_notebook()
+
+    if screenshots_dir_path:
+        # Create the directory(ies), if not yet created, in where the screenshots will be saved
+        # e.g.: <screenshots_dir_path>/<nb_filename_wo_ext>/<YYYY_MM_DD>/
+        screenshots_dir_path = os_path_join(
+            screenshots_dir_path,
+            splitext(basename(nb_input_path))[0],
+            strftime("%Y_%m_%d", gmtime())
+        )
+        makedirs(screenshots_dir_path, exist_ok=True)
 
     # Start Playwright and run the profiler
     async with async_playwright() as p:

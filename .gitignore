@@ -72,4 +72,5 @@ pip-wheel-metadata
 /*venv
 
 # Jupyter Notebooks
-imviz_images/notebooks/*.ipynb
+*/notebooks/*.ipynb
+*/screenshots/*
