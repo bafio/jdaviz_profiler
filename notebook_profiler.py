@@ -12,12 +12,14 @@ import argparse
 import asyncio
 import json
 import logging
+from datetime import timedelta
 from io import BytesIO
 from os import makedirs
 from os.path import basename, splitext
 from os.path import join as os_path_join
 from time import gmtime, perf_counter_ns, strftime, time
 
+import nbformat
 import requests
 from PIL import Image
 from playwright.async_api import ElementHandle, async_playwright
@@ -35,6 +37,9 @@ logger.addHandler(console_handler)
 
 class VizElement:
     """Class representing the viz element in a Jupyter notebook."""
+
+    # Seconds to wait during the screenshots taking
+    WAIT_TIME_DURING_SCREENSHOTS = 0.5
 
     def __init__(self, element: ElementHandle, profiler: "Profiler") -> None:
         """
@@ -73,7 +78,7 @@ class VizElement:
         screenshot_before = await self.element.screenshot()
 
         # Wait a short period before taking another screenshot
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(self.WAIT_TIME_DURING_SCREENSHOTS)
 
         # Take another screenshot of the viz element
         screenshot_after = await self.element.screenshot()
@@ -92,7 +97,20 @@ class VizElement:
 class ExecutableCell:
     """Class representing an executable cell in a Jupyter notebook."""
 
-    def __init__(self, cell: ElementHandle, index: int, profiler: "Profiler") -> None:
+    # Seconds to wait after the execution command if no need to
+    # collect profiling metrics
+    SECONDS_TO_WAIT_IF_SKIP_PROFILING = 2.5
+
+    # Seconds to wait before checking if the viz element is present
+    WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION = 0.5
+
+    def __init__(
+        self,
+        cell: ElementHandle,
+        index: int,
+        skip_profiling: bool,
+        profiler: "Profiler",
+    ) -> None:
         """
         Initialize the ExecutableCell with a Playwright ElementHandle and an optional
         index.
@@ -102,11 +120,15 @@ class ExecutableCell:
             The Playwright ElementHandle representing the cell.
         index : int
             The index of the cell.
+        skip_profiling : bool
+            Mark the ExecutableCell as to skip the collectection or not of
+            profiling metrics during its execution.
         profiler : Profiler
             The Profiler instance.
         """
         self._cell = cell
         self._index = index
+        self._skip_profiling = skip_profiling
         self._profiler = profiler
         self.execution_time = 0
 
@@ -119,6 +141,10 @@ class ExecutableCell:
         return self._index
 
     @property
+    def skip_profiling(self) -> bool:
+        return self._skip_profiling
+
+    @property
     def profiler(self) -> "Profiler":
         return self._profiler
 
@@ -129,6 +155,17 @@ class ExecutableCell:
             await self.cell.focus()
             # Execute the cell
             await self.profiler.page.keyboard.press("Shift+Enter")
+
+            # If this cell does not need to collect metrics during its execution,
+            # wait for few seconds and exit
+            if self.skip_profiling:
+                logger.info(
+                    "This cell has been tagged as to not collect profiling "
+                    "metrics during its execution."
+                )
+                await asyncio.sleep(self.SECONDS_TO_WAIT_IF_SKIP_PROFILING)
+                return
+
             # Initialize variables to track the viz element and elapsed time
             viz_is_stable, timer, time_elapsed = False, time(), 0
 
@@ -144,8 +181,11 @@ class ExecutableCell:
                     )
                 else:
                     # Wait a bit before checking again
-                    logger.debug("Waiting for the viz element to appear...")
-                    await asyncio.sleep(0.5)
+                    logger.debug(
+                        f"Waiting {self.WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION} "
+                        "seconds for the viz element to appear..."
+                    )
+                    await asyncio.sleep(self.WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION)
                     # Look for the viz element in the page
                     logger.debug("Looking for the viz element in the page...")
                     await self.profiler.detect_viz_element()
@@ -184,6 +224,9 @@ class Profiler:
         ".jp-WindowedPanel-viewport>.lm-Widget.jp-Cell.jp-CodeCell.jp-Notebook-cell"
     )
 
+    # The value of the cell tag marked as to skip metrics collections during profiling
+    SKIP_PROFILING_CELL_TAG = "skip_profiling"
+
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR = ".jdaviz.imviz"
 
@@ -193,6 +236,7 @@ class Profiler:
         url: str,
         headless: str,
         max_wait_time: int,
+        nb_input_path: str,
         screenshots_dir_path: str = None,
     ) -> None:
         """
@@ -207,20 +251,23 @@ class Profiler:
             Whether to run in headless mode.
         max_wait_time : int
             Time to wait after executing each cell (in seconds).
+        nb_input_path : str
+            Path to the input notebook to be profiled.
         screenshots_dir_path : str, optional
             Path to the directory to where screenshots will be stored, if not passed as
-            an argument,
-            screenshots will not be logged.
+            an argument, screenshots will not be logged.
         """
         self._playwright = playwright
         self._url = url
         self._headless = headless
         self._max_wait_time = max_wait_time
+        self._nb_input_path = nb_input_path
         self._screenshots_dir_path = screenshots_dir_path
         self._browser = None
         self._context = None
         self._page = None
         self._viz_element = None
+        self.skip_profiling_cell_indexes = frozenset()
 
     @property
     def playwright(self) -> PlaywrightContextManager:
@@ -237,6 +284,10 @@ class Profiler:
     @property
     def max_wait_time(self) -> int:
         return self._max_wait_time
+
+    @property
+    def nb_input_path(self) -> str:
+        return self._nb_input_path
 
     @property
     def screenshots_dir_path(self) -> int:
@@ -262,6 +313,10 @@ class Profiler:
         """
         Set up the Playwright browser and page.
         """
+        # Inspect the notebook file to find "skip_profiling" cells and
+        # "network_bandwith" value
+        await self.inspect_notebook()
+
         # Launch the browser and create a new page
         self._browser = await self.playwright.chromium.launch(headless=self.headless)
         self._context = await self.browser.new_context()
@@ -309,7 +364,10 @@ class Profiler:
         total_execution_time = sum(
             executable_cell.execution_time for executable_cell in executable_cells
         )
-        logger.info(f"Cells execution times: {total_execution_time}")
+        logger.info(
+            "All the cells in the notebook have been executed. "
+            f"The total execution time is: {timedelta(seconds=total_execution_time)}"
+        )
         logger.info("Profiling completed.")
 
     async def detect_viz_element(self) -> None:
@@ -369,11 +427,48 @@ class Profiler:
         nb_cells = await self.page.query_selector_all(self.NB_CELLS_SELECTOR)
         # Store cells in an ordered dictionary with their index
         executable_cells = [
-            ExecutableCell(cell=cell, index=i, profiler=self)
+            ExecutableCell(
+                cell=cell,
+                index=i,
+                skip_profiling=i in self.skip_profiling_cell_indexes,
+                profiler=self,
+            )
             for i, cell in enumerate(nb_cells, 1)
         ]
         logger.info(f"Number of cells in the notebook: {len(executable_cells)}")
         return executable_cells
+
+    async def inspect_notebook(self) -> None:
+        """
+        Inspect the notebook file to find "skip_profiling" cells and
+        "network_bandwith" value.
+        """
+        nb = nbformat.read(self.nb_input_path, nbformat.NO_CONVERT)
+        await self.collect_skip_profiling_cell_indexes(nb)
+
+    async def collect_skip_profiling_cell_indexes(
+        self, notebook: nbformat.NotebookNode
+    ) -> None:
+        """
+        Collect the indexes of cells marked as skip profiling.
+        Parameters
+        ----------
+        notebook : nbformat.NotebookNode
+            The notebook to read from.
+        """
+        skip_profiling_cell_indexes = []
+        for cell_index, cell in enumerate(notebook.cells, 1):
+            # Get the nb cell tagged with the specified cell_tag
+            tags = cell.metadata.get("tags", [])
+            if self.SKIP_PROFILING_CELL_TAG in tags:
+                skip_profiling_cell_indexes.append(cell_index)
+
+        # Assign as frozenset to limit to readonly
+        self.skip_profiling_cell_indexes = frozenset(skip_profiling_cell_indexes)
+        logger.debug(
+            "Profiling metrics for the following cells "
+            f"{tuple(self.skip_profiling_cell_indexes)} will not be collected."
+        )
 
     async def close(self) -> None:
         """
@@ -679,6 +774,7 @@ async def profile_notebook(
             url=jupyter_lab_helper.notebook_url,
             headless=headless,
             max_wait_time=max_wait_time,
+            nb_input_path=nb_input_path,
             screenshots_dir_path=screenshots_dir_path,
         )
         await profiler.setup()

@@ -26,6 +26,7 @@ An example of how to structure a new `<usecase>`, and the `template.ipynb` and `
 ### Notebook Profiling:
 
 Uses Playwright to launch and interact with JupyterLab, executing each notebook cell and recording performance metrics.
+Optionally, if a cell is tagged with `skip_profiling`, the performance metrics during the execution of that cell will not be collected.
 
 ### Session Management:
 
