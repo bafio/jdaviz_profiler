@@ -11,7 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
     "jdaviz",
     "pillow",
-    "playwright",
+    "selenium",
+    "chromedriver-py",
     "requests",
     "nbformat",
     "ruff",

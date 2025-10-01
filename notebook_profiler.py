@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Uses Playwright to launch and interact with JupyterLab, executing each notebook cell and
+Uses Selenium to launch and interact with JupyterLab, executing each notebook cell and
 recording performance metrics.
 
 Usage:
@@ -22,10 +22,16 @@ from time import gmtime, perf_counter_ns, strftime, time
 
 import nbformat
 import requests
+from chromedriver_py import binary_path
 from PIL import Image
-from playwright.async_api import ElementHandle, async_playwright
-from playwright.async_api._context_manager import PlaywrightContextManager
-from playwright.async_api._generated import Browser, BrowserContext, Page
+from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -35,6 +41,9 @@ console_handler.setFormatter(
 )
 logger.addHandler(console_handler)
 
+KILOBYTE = 1024
+MEGABYTE = 1024 * KILOBYTE
+
 
 class VizElement:
     """Class representing the viz element in a Jupyter notebook."""
@@ -42,13 +51,13 @@ class VizElement:
     # Seconds to wait during the screenshots taking
     WAIT_TIME_DURING_SCREENSHOTS = 0.5
 
-    def __init__(self, element: ElementHandle, profiler: "Profiler") -> None:
+    def __init__(self, element: WebElement, profiler: "Profiler") -> None:
         """
-        Initialize the VizElement with a Playwright ElementHandle.
+        Initialize the VizElement with a Selenium WebElement.
         Parameters
         ----------
-        element : ElementHandle
-            The Playwright ElementHandle representing the viz element.
+        element : WebElement
+            The Selenium WebElement representing the viz element.
         profiler : Profiler
             The Profiler instance.
         """
@@ -56,7 +65,7 @@ class VizElement:
         self._profiler = profiler
 
     @property
-    def element(self) -> ElementHandle:
+    def element(self) -> WebElement:
         return self._element
 
     @property
@@ -76,13 +85,13 @@ class VizElement:
             return False
 
         # Take a screenshot of the viz element
-        screenshot_before = await self.element.screenshot()
+        screenshot_before = self.element.screenshot_as_png
 
         # Wait a short period before taking another screenshot
         await asyncio.sleep(self.WAIT_TIME_DURING_SCREENSHOTS)
 
         # Take another screenshot of the viz element
-        screenshot_after = await self.element.screenshot()
+        screenshot_after = self.element.screenshot_as_png
 
         # Log screenshots
         await self.profiler.log_screenshots(
@@ -118,19 +127,18 @@ class ExecutableCell:
 
     def __init__(
         self,
-        cell: ElementHandle,
+        cell: WebElement,
         index: int,
         skip_profiling: bool,
         wait_for_viz: bool,
         profiler: "Profiler",
     ) -> None:
         """
-        Initialize the ExecutableCell with a Playwright ElementHandle and an optional
-        index.
+        Initialize the ExecutableCell with a Selenium WebElement and an optional index.
         Parameters
         ----------
-        cell : ElementHandle
-            The Playwright ElementHandle representing the cell.
+        cell : WebElement
+            The Selenium WebElement representing the cell.
         index : int
             The index of the cell.
         skip_profiling : bool
@@ -149,7 +157,7 @@ class ExecutableCell:
         self.execution_time = 0
 
     @property
-    def cell(self) -> ElementHandle:
+    def cell(self) -> WebElement:
         return self._cell
 
     @property
@@ -176,22 +184,21 @@ class ExecutableCell:
         bool
             True if the DONE statement is found, False otherwise.
         """
-        output_cells = await self.cell.query_selector_all(self.OUTPUT_CELLS_SELECTOR)
+        output_cells = self.cell.find_elements(
+            By.CSS_SELECTOR, self.OUTPUT_CELLS_SELECTOR
+        )
         if not output_cells:
             logger.debug(f"Cell {self.index} has no output cells yet, waiting...")
             return False
         for output_cell in output_cells:
-            text_output_cells = await output_cell.query_selector_all(
-                self.OUTPUT_CELLS_TEXT_SELECTOR
+            text_output_cells = output_cell.find_elements(
+                By.CSS_SELECTOR, self.OUTPUT_CELLS_TEXT_SELECTOR
             )
             logger.debug(f"Found {len(text_output_cells)} text output cells")
             if not text_output_cells:
                 continue
             output_txt = linesep.join(
-                [
-                    await text_output_cell.inner_text()
-                    for text_output_cell in text_output_cells
-                ]
+                [text_output_cell.text for text_output_cell in text_output_cells]
             )
             match = re.search(self.OUTPUT_CELL_DONE_REGEX, output_txt, re.MULTILINE)
             if match and match.group("DONE"):
@@ -202,10 +209,10 @@ class ExecutableCell:
     async def execute(self) -> None:
         try:
             logger.info(f"Executing cell {self.index}")
-            # Focus on the cell
-            await self.cell.focus()
+            # Click on the cell
+            self.cell.click()
             # Execute the cell
-            await self.profiler.page.keyboard.press("Shift+Enter")
+            self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
 
             # Initialize variables to track the viz element and elapsed time
             viz_is_stable, timer, time_elapsed = False, time(), 0
@@ -267,7 +274,7 @@ class ExecutableCell:
 
 
 class Profiler:
-    """Class to profile a Jupyter notebook using Playwright."""
+    """Class to profile a Jupyter notebook using Selenium."""
 
     # The width and height to set for the browser viewport to make the page really tall
     # to avoid scrollbars and scrolling issues
@@ -299,7 +306,7 @@ class Profiler:
 
     # The regex to find the ui_network_throttling value
     UI_NETWORK_THROTTLING_REGEX = (
-        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>\d+(\.\d+)?)"  # noqa: E501
+        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>\d+(\.\d+)?)"
     )
 
     # Selector for the jdaviz app viz element
@@ -307,7 +314,6 @@ class Profiler:
 
     def __init__(
         self,
-        playwright: PlaywrightContextManager,
         url: str,
         headless: str,
         max_wait_time: int,
@@ -315,11 +321,9 @@ class Profiler:
         screenshots_dir_path: str = None,
     ) -> None:
         """
-        Initialize the Profiler with Playwright, URL, headless mode, and wait time.
+        Initialize the Profiler with URL, headless mode, and wait time.
         Parameters
         ----------
-        playwright : PlaywrightContextManager
-            The Playwright context manager.
         url : str
             The URL of the notebook to profile.
         headless : bool
@@ -332,23 +336,16 @@ class Profiler:
             Path to the directory to where screenshots will be stored, if not passed as
             an argument, screenshots will not be logged.
         """
-        self._playwright = playwright
         self._url = url
         self._headless = headless
         self._max_wait_time = max_wait_time
         self._nb_input_path = nb_input_path
         self._screenshots_dir_path = screenshots_dir_path
-        self._browser = None
-        self._context = None
-        self._page = None
+        self._driver = None
         self._viz_element = None
         self.ui_network_throttling_value = None
         self.skip_profiling_cell_indexes = frozenset()
         self.wait_for_viz_cell_indexes = frozenset()
-
-    @property
-    def playwright(self) -> PlaywrightContextManager:
-        return self._playwright
 
     @property
     def url(self) -> str:
@@ -371,16 +368,8 @@ class Profiler:
         return self._screenshots_dir_path
 
     @property
-    def browser(self) -> Browser:
-        return self._browser
-
-    @property
-    def context(self) -> BrowserContext:
-        return self._context
-
-    @property
-    def page(self) -> Page:
-        return self._page
+    def driver(self) -> WebDriver:
+        return self._driver
 
     @property
     def viz_element(self) -> VizElement | None:
@@ -388,40 +377,38 @@ class Profiler:
 
     async def setup(self) -> None:
         """
-        Set up the Playwright browser and page.
+        Set up the Selenium browser and page.
         """
         # Inspect the notebook file to find "skip_profiling" cells and
         # "network_bandwith" value
         await self.inspect_notebook()
 
         # Launch the browser and create a new page
-        self._browser = await self.playwright.chromium.launch(headless=self.headless)
-        self._context = await self.browser.new_context()
-        self._page = await self.context.new_page()
+        self._driver = Chrome(service=ChromeService(executable_path=binary_path))
+
+        # If ui_network_throttling_value is not None, set up the network throttling
+        if self.ui_network_throttling_value is not None:
+            self.driver.set_network_conditions(
+                offline=False,
+                latency=0,
+                download_throughput=self.ui_network_throttling_value,
+                upload_throughput=-1,  # -1 means no throttling
+            )
 
         # Apply custom viewport size
-        await self.page.set_viewport_size(self.VIEWPORT_SIZE)
+        self.driver.set_window_size(*self.VIEWPORT_SIZE.values())
         logger.debug("Page viewport set")
-
-        # # If ui_network_throttling_value is not None, set up the network throttling
-        # if self.ui_network_throttling_value is not None:
-        #     client = await self.page.context.new_cdp_session(self.page)
-        #     await client.send(
-        #         "Network.emulateNetworkConditions",
-        #         {
-        #             "offline": False,
-        #             "latency": 0,
-        #             "downloadThroughput": self.ui_network_throttling_value,
-        #             "uploadThroughput": -1,  # -1 here means no throttling for upload
-        #         },
-        #     )
 
         # Navigate to the notebook URL
         logger.info(f"Navigating to {self.url}")
-        await self.page.goto(self.url)
+        self.driver.get(self.url)
 
         # Apply custom CSS styles
-        await self.page.add_style_tag(content=self.PAGE_STYLE_TAG_CONTENT)
+        self.driver.execute_script(
+            "const style = document.createElement('style'); "
+            f"style.innerHTML = `{self.PAGE_STYLE_TAG_CONTENT}`; "
+            "document.head.appendChild(style);"
+        )
         logger.debug("Page style added")
 
     async def run(self) -> None:
@@ -429,7 +416,9 @@ class Profiler:
         Run the profiling process.
         """
         # Wait for the notebook to load
-        await self.page.wait_for_selector(self.NB_SELECTOR)
+        WebDriverWait(self.driver, 10).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, self.NB_SELECTOR))
+        )
 
         # Wait a bit to ensure the page is fully loaded
         sleep_time = 5
@@ -464,7 +453,9 @@ class Profiler:
         """
         Detect the viz element based on the CSS classes given to the viz app.
         """
-        viz_element = await self.page.query_selector(self.VIZ_ELEMENT_SELECTOR)
+        viz_element = self.driver.find_element(
+            By.CSS_SELECTOR, self.VIZ_ELEMENT_SELECTOR
+        )
         if viz_element:
             self._viz_element = VizElement(element=viz_element, profiler=self)
             logger.debug("Viz element detected and assigned")
@@ -514,7 +505,8 @@ class Profiler:
             in the notebook.
         """
         # Collect all code cells in the notebook
-        nb_cells = await self.page.query_selector_all(self.NB_CELLS_SELECTOR)
+        nb_cells = self.driver.find_elements(By.CSS_SELECTOR, self.NB_CELLS_SELECTOR)
+
         # Store cells in an ordered dictionary with their index
         executable_cells = [
             ExecutableCell(
@@ -581,7 +573,6 @@ class Profiler:
         notebook : nbformat.NotebookNode
             The notebook to read from.
         """
-        ui_network_throttling_value = None
         for cell in notebook.cells:
             # Get the nb cell tagged with the specified cell_tag
             tags = cell.metadata.get("tags", [])
@@ -589,20 +580,18 @@ class Profiler:
                 cell_source = cell.source or ""
                 match = re.search(self.UI_NETWORK_THROTTLING_REGEX, cell_source)
                 if match and match.group("value"):
-                    ui_network_throttling_value = float(match.group("value"))
+                    value = int(match.group("value"))
+                    self.ui_network_throttling_value = value * MEGABYTE
                 # Once a cell tagged as parameters has been found, there is no need
                 # to keep looking
-                break
-        self.ui_network_throttling_value = ui_network_throttling_value
+                return
 
     async def close(self) -> None:
         """
-        Close the Playwright browser and context.
+        Close the Selenium driver.
         """
-        await self.context.close()
-        logger.debug("Browser context closed")
-        await self.browser.close()
-        logger.debug("Browser closed")
+        self.driver.quit()
+        logger.debug("Driver closed")
 
 
 class JupyterLabHelper:
@@ -828,7 +817,7 @@ async def profile_notebook(
     log_level: str = "INFO",
 ) -> None:
     """
-    Profile the notebook at the specified URL using Playwright.
+    Profile the notebook at the specified URL using Selenium.
     Parameters
     ----------
     url : str
@@ -892,19 +881,17 @@ async def profile_notebook(
         )
         makedirs(screenshots_dir_path, exist_ok=True)
 
-    # Start Playwright and run the profiler
-    async with async_playwright() as p:
-        profiler = Profiler(
-            playwright=p,
-            url=jupyter_lab_helper.notebook_url,
-            headless=headless,
-            max_wait_time=max_wait_time,
-            nb_input_path=nb_input_path,
-            screenshots_dir_path=screenshots_dir_path,
-        )
-        await profiler.setup()
-        await profiler.run()
-        await profiler.close()
+    # Start Selenium and run the profiler
+    profiler = Profiler(
+        url=jupyter_lab_helper.notebook_url,
+        headless=headless,
+        max_wait_time=max_wait_time,
+        nb_input_path=nb_input_path,
+        screenshots_dir_path=screenshots_dir_path,
+    )
+    await profiler.setup()
+    await profiler.run()
+    await profiler.close()
 
     # Clean up by deleting the uploaded notebook
     await jupyter_lab_helper.delete_notebook()
@@ -913,7 +900,7 @@ async def profile_notebook(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
-            "Script that Uses Playwright to launch and interact with JupyterLab, "
+            "Script that Uses Selenium to launch and interact with JupyterLab, "
             "executing each notebook cell and recording performance metrics."
         )
     )

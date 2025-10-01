@@ -4,5 +4,5 @@
   "sidecar_value": [true, false],
   "viewport_pixel_size_value": [600, 1000, 2000, 4000],
   "with_dq_value": [false, true],
-  "ui_network_throttling_value": [0.5, 1, 5, 10, 50, 100]
+  "ui_network_throttling_value": [1, 5, 10, 50, 100]
 }
