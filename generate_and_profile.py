@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to generate the parameterized notebooks from a template.ipynb and params.yaml and
+Script to generate the parameterized notebooks from a template.ipynb and params.json and
 run the profiler on them.
 
 Usage:
@@ -40,7 +40,7 @@ async def generate_and_profile(
     Parameters
     ----------
     input_dir_path : str
-        Path to the directory containing the template notebook and params.yaml file.
+        Path to the directory containing the template notebook and params.json file.
     url : str
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--input_dir_path",
         help=(
-            "Path to the directory containing the template notebook and params.yaml "
+            "Path to the directory containing the template notebook and params.json "
             "file."
         ),
         required=True,
