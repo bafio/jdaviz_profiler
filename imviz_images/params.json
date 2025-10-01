@@ -1,0 +1,8 @@
+{
+  "image_pixel_side_value": [500, 1000, 10000, 100000],
+  "n_images_value": [1, 3, 5, 10, 25],
+  "sidecar_value": [true, false],
+  "viewport_pixel_size_value": [600, 1000, 2000, 4000],
+  "with_dq_value": [false, true],
+  "ui_network_throttling_value": [0.5, 1, 5, 10, 50, 100]
+}

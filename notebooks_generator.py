@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Script to generate the parameterized notebooks from a template.ipynb and params.yaml.
-The template.ipynb file serves as the base notebook, while params.yaml contains the
+Script to generate the parameterized notebooks from a template.ipynb and params.json.
+The template.ipynb file serves as the base notebook, while params.json contains the
 parameter values to be injected into the notebook.
 The template.ipynb must have a cell with placeholders for the parameters to be replaced,
 therefore this cell must:
     - precede all other cells with actual code using the parameters.
     - be tagged with the "parameters" label.
-Each parameter in the params.yaml file must have a corresponding placeholder in the
+Each parameter in the params.json file must have a corresponding placeholder in the
 template.ipynb file, and the placeholders must be unique having "_value" as suffix,
 e.g. `image_pixel_side_value` or `viewport_pixel_size_value`.
 The generated parameterized notebooks will be saved in the "notebooks" directory.
-An example of how to structure this, and the template.ipynb and params.yaml files, is
+An example of how to structure this, and the template.ipynb and params.json files, is
 provided in the repository in imviz_images.
 
 Usage:
@@ -26,7 +26,7 @@ from os import path as os_path
 
 import nbformat
 
-from utils import load_dict_from_yaml_file
+from utils import load_dict_from_json_file
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -37,7 +37,7 @@ console_handler.setFormatter(
 logger.addHandler(console_handler)
 
 NOTEBOOK_TEMPLATE_FILENAME = "template.ipynb"
-PARAMS_FILENAME = "params.yaml"
+PARAMS_FILENAME = "params.json"
 OUTPUT_DIR_PATH = "notebooks"
 
 
@@ -197,18 +197,18 @@ def generate_notebook(
 
 def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
     """
-    Generate the parameterized notebooks from a template.ipynb and params.yaml, and
+    Generate the parameterized notebooks from a template.ipynb and params.json, and
     save them to the "notebooks" directory.
     Parameters
     ----------
     input_dir_path : str
-        Path to the directory containing the template.ipynb and params.yaml files.
+        Path to the directory containing the template.ipynb and params.json files.
     log_level : str, optional
         Logging level (default is "INFO").
     Raises
     ------
     FileNotFoundError
-        If the template.ipynb does not exist or the params.yaml file does not exist.
+        If the template.ipynb does not exist or the params.json file does not exist.
     """
     # Set up logging
     logger.setLevel(log_level.upper())
@@ -240,7 +240,7 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
         os.makedirs(output_dir_path)
 
     # Load parameters
-    params = load_dict_from_yaml_file(params_path)
+    params = load_dict_from_json_file(params_path)
 
     # Generate all combinations of parameters
     parameters_combinations = dict_combinations(params)
@@ -285,13 +285,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
             "Script to generate the parameterized notebooks from a template.ipynb and "
-            "params.yaml."
+            "params.json."
         )
     )
     parser.add_argument(
         "--input_dir_path",
         help=(
-            "Path to the directory containing the template.ipynb and params.yaml files."
+            "Path to the directory containing the template.ipynb and params.json files."
         ),
         required=True,
         type=str,

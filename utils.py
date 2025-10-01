@@ -1,6 +1,5 @@
+import json
 import logging
-
-import yaml
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -11,13 +10,13 @@ console_handler.setFormatter(
 logger.addHandler(console_handler)
 
 
-def load_dict_from_yaml_file(file_path: str) -> dict:
+def load_dict_from_json_file(file_path: str) -> dict:
     """
-    Load a dictionary of key-value pairs from a YAML file.
+    Load a dictionary of key-value pairs from a JSON file.
     Parameters
     ----------
     file_path : str
-        Path to the YAML file.
+        Path to the JSON file.
     Returns
     -------
     dict
@@ -25,12 +24,12 @@ def load_dict_from_yaml_file(file_path: str) -> dict:
     Raises
     ------
     FileNotFoundError
-        If the YAML file does not exist.
+        If the JSON file does not exist.
     ValueError
-        If the YAML file is empty or improperly formatted.
+        If the JSON file is empty or improperly formatted.
     """
     with open(file_path, "r") as f:
-        data = yaml.full_load(f)
+        data = json.loads(f.read())
     if not data:
         msg = f"No data found in {file_path}"
         logger.error(msg)
