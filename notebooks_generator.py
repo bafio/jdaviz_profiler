@@ -80,7 +80,6 @@ def inject_key_value_data(
     template_nb: nbformat.NotebookNode,
     data_dict: dict,
     cell_tag: str,
-    optional: bool = True,
 ) -> nbformat.NotebookNode:
     """
     Inject key-value data into a specific cell (tagged with `cell_tag`) in the template
@@ -93,8 +92,6 @@ def inject_key_value_data(
         A dictionary of key-value data to inject into the notebook.
     cell_tag : str
         The tag of the cell to modify.
-    optional : bool
-        Whether the cell is optional (default is True).
     Returns
     -------
     nbformat.NotebookNode
@@ -122,10 +119,39 @@ def inject_key_value_data(
             cell.source = cell_source.format(**data_dict)
             break
 
-    if not cell_found and not optional:
+    if not cell_found:
         msg = f"No cell with '{cell_tag}' tag found in the template.ipynb."
         logger.error(msg)
         raise ValueError(msg)
+
+    return template_nb
+
+
+def inject_done_statement(template_nb: nbformat.NotebookNode) -> nbformat.NotebookNode:
+    """
+    Inject a `print("DONE")` statement at the end of code cells in the template
+    notebook.
+    Parameters
+    ----------
+    template_nb : nbformat.NotebookNode
+        The template notebook to modify.
+    Returns
+    -------
+    nbformat.NotebookNode
+        The modified notebook with data injected.
+    """
+    done_statement = 'print("DONE")'
+
+    # Modify the template.ipynb with the provided data
+    for cell in template_nb.cells:
+        # Skip non code type cells
+        if cell.cell_type != "code":
+            continue
+        cell_source = cell.source
+        lines = cell_source.splitlines()
+        if lines and lines[-1] != done_statement:
+            lines.append(done_statement)
+        cell.source = os.linesep.join(lines)
 
     return template_nb
 
@@ -162,8 +188,9 @@ def generate_notebook(
         template_nb=template_nb,
         data_dict=parameters_values,
         cell_tag="parameters",
-        optional=False,
     )
+
+    template_nb = inject_done_statement(template_nb=template_nb)
 
     return template_nb
 

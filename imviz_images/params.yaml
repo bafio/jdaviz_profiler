@@ -20,3 +20,10 @@ viewport_pixel_size_value: !!python/tuple
 with_dq_value: !!python/tuple
   - false
   - true
+ui_network_throttling_value: !!python/tuple
+  - 0.5
+  - 1
+  - 5
+  - 10
+  - 50
+  - 100

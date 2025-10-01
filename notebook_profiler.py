@@ -12,9 +12,10 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 from datetime import timedelta
 from io import BytesIO
-from os import makedirs
+from os import linesep, makedirs
 from os.path import basename, splitext
 from os.path import join as os_path_join
 from time import gmtime, perf_counter_ns, strftime, time
@@ -101,14 +102,26 @@ class ExecutableCell:
     # collect profiling metrics
     SECONDS_TO_WAIT_IF_SKIP_PROFILING = 2.5
 
-    # Seconds to wait before checking if the viz element is present
-    WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION = 0.5
+    # Seconds to wait before checking the executed cell outputs
+    WAIT_TIME_BEFORE_OUTPUT_CHECK = 0.5
+
+    # Selector for all output cells in a code cell
+    OUTPUT_CELLS_SELECTOR = ".lm-Widget.lm-Panel.jp-Cell-outputWrapper"
+
+    # Selector for all text output cells in a code cell
+    OUTPUT_CELLS_TEXT_SELECTOR = (
+        ".lm-Widget.jp-RenderedText.jp-mod-trusted.jp-OutputArea-output"
+    )
+
+    # Regex to identify the cell output containing the `DONE` text output
+    OUTPUT_CELL_DONE_REGEX = r"^.*(?P<DONE>DONE).*$"
 
     def __init__(
         self,
         cell: ElementHandle,
         index: int,
         skip_profiling: bool,
+        wait_for_viz: bool,
         profiler: "Profiler",
     ) -> None:
         """
@@ -123,12 +136,15 @@ class ExecutableCell:
         skip_profiling : bool
             Mark the ExecutableCell as to skip the collectection or not of
             profiling metrics during its execution.
+        wait_for_viz : bool
+            Mark the ExecutableCell as to wait if viz is stable
         profiler : Profiler
             The Profiler instance.
         """
         self._cell = cell
         self._index = index
         self._skip_profiling = skip_profiling
+        self._wait_for_viz = wait_for_viz
         self._profiler = profiler
         self.execution_time = 0
 
@@ -145,8 +161,43 @@ class ExecutableCell:
         return self._skip_profiling
 
     @property
+    def wait_for_viz(self) -> bool:
+        return self._wait_for_viz
+
+    @property
     def profiler(self) -> "Profiler":
         return self._profiler
+
+    async def look_for_done_statement(self) -> bool:
+        """
+        Look for the DONE statement in the output cells of the cell.
+        Returns
+        -------
+        bool
+            True if the DONE statement is found, False otherwise.
+        """
+        output_cells = await self.cell.query_selector_all(self.OUTPUT_CELLS_SELECTOR)
+        if not output_cells:
+            logger.debug(f"Cell {self.index} has no output cells yet, waiting...")
+            return False
+        for output_cell in output_cells:
+            text_output_cells = await output_cell.query_selector_all(
+                self.OUTPUT_CELLS_TEXT_SELECTOR
+            )
+            logger.debug(f"Found {len(text_output_cells)} text output cells")
+            if not text_output_cells:
+                continue
+            output_txt = linesep.join(
+                [
+                    await text_output_cell.inner_text()
+                    for text_output_cell in text_output_cells
+                ]
+            )
+            match = re.search(self.OUTPUT_CELL_DONE_REGEX, output_txt, re.MULTILINE)
+            if match and match.group("DONE"):
+                logger.info(f"Cell {self.index} DONE statement found!")
+                return True
+        return False
 
     async def execute(self) -> None:
         try:
@@ -156,23 +207,33 @@ class ExecutableCell:
             # Execute the cell
             await self.profiler.page.keyboard.press("Shift+Enter")
 
-            # If this cell does not need to collect metrics during its execution,
-            # wait for few seconds and exit
-            if self.skip_profiling:
-                logger.info(
-                    "This cell has been tagged as to not collect profiling "
-                    "metrics during its execution."
-                )
-                await asyncio.sleep(self.SECONDS_TO_WAIT_IF_SKIP_PROFILING)
-                return
-
             # Initialize variables to track the viz element and elapsed time
             viz_is_stable, timer, time_elapsed = False, time(), 0
 
-            # output_cells = None
-            while time_elapsed < self.profiler.max_wait_time and not viz_is_stable:
-                # If we have the viz element, check if it's stable
+            while True:
+                # Wait a bit before checking again
+                await asyncio.sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+
+                # Check if the DONE statement
+                done_found = await self.look_for_done_statement()
+                if not done_found:
+                    logger.debug(f"Cell {self.index} DONE statement not found yet...")
+                    continue
+
+                logger.debug(f"Cell {self.index} DONE statement found, moving on...")
+
+                if not self.wait_for_viz:
+                    logger.debug(
+                        f"Cell {self.index} is not tagged as to wait for viz changes, "
+                        "moving on..."
+                    )
+                    # save time elapsed
+                    time_elapsed = time() - timer
+                    break
+
+                logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
                 if self.profiler.viz_element:
+                    # If we have the viz element, check if it's stable
                     logger.debug(
                         "We already have the viz element, checking if it's stable..."
                     )
@@ -180,20 +241,20 @@ class ExecutableCell:
                         self.index
                     )
                 else:
-                    # Wait a bit before checking again
-                    logger.debug(
-                        f"Waiting {self.WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION} "
-                        "seconds for the viz element to appear..."
-                    )
-                    await asyncio.sleep(self.WAIT_TIME_BEFORE_VIZ_ELEMENT_DETECTION)
                     # Look for the viz element in the page
                     logger.debug("Looking for the viz element in the page...")
                     await self.profiler.detect_viz_element()
-                time_elapsed = time() - timer
 
-            # save time elapsed only if coming from a stable viz element,
-            # otherwise count as 0
-            self.execution_time = time_elapsed if viz_is_stable else 0
+                if viz_is_stable:
+                    logger.debug(
+                        f"Cell {self.index} viz element is stable, moving on..."
+                    )
+                    # save time elapsed
+                    time_elapsed = time() - timer
+                    break
+
+            # save time elapsed
+            self.execution_time = time_elapsed if not self.skip_profiling else 0
             # Log the time elapsed for the cell execution
             logger.info(
                 f"Cell {self.index} completed in {self.execution_time:.2f} seconds"
@@ -226,6 +287,20 @@ class Profiler:
 
     # The value of the cell tag marked as to skip metrics collections during profiling
     SKIP_PROFILING_CELL_TAG = "skip_profiling"
+
+    # The value of the cell tag marked as to wait for the viz
+    WAIT_FOR_VIZ_CELL_TAG = "wait_for_viz"
+
+    # The value of the cell tag holding the notebook parameters
+    PARAMETERS_CELL_TAG = "parameters"
+
+    # The parameter name holding the ui_network_throttling value
+    UI_NETWORK_THROTTLING_PARAM = "ui_network_throttling"
+
+    # The regex to find the ui_network_throttling value
+    UI_NETWORK_THROTTLING_REGEX = (
+        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>\d+(\.\d+)?)"  # noqa: E501
+    )
 
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR = ".jdaviz.imviz"
@@ -267,7 +342,9 @@ class Profiler:
         self._context = None
         self._page = None
         self._viz_element = None
+        self.ui_network_throttling_value = None
         self.skip_profiling_cell_indexes = frozenset()
+        self.wait_for_viz_cell_indexes = frozenset()
 
     @property
     def playwright(self) -> PlaywrightContextManager:
@@ -325,6 +402,19 @@ class Profiler:
         # Apply custom viewport size
         await self.page.set_viewport_size(self.VIEWPORT_SIZE)
         logger.debug("Page viewport set")
+
+        # # If ui_network_throttling_value is not None, set up the network throttling
+        # if self.ui_network_throttling_value is not None:
+        #     client = await self.page.context.new_cdp_session(self.page)
+        #     await client.send(
+        #         "Network.emulateNetworkConditions",
+        #         {
+        #             "offline": False,
+        #             "latency": 0,
+        #             "downloadThroughput": self.ui_network_throttling_value,
+        #             "uploadThroughput": -1,  # -1 here means no throttling for upload
+        #         },
+        #     )
 
         # Navigate to the notebook URL
         logger.info(f"Navigating to {self.url}")
@@ -431,6 +521,7 @@ class Profiler:
                 cell=cell,
                 index=i,
                 skip_profiling=i in self.skip_profiling_cell_indexes,
+                wait_for_viz=i in self.wait_for_viz_cell_indexes,
                 profiler=self,
             )
             for i, cell in enumerate(nb_cells, 1)
@@ -444,31 +535,65 @@ class Profiler:
         "network_bandwith" value.
         """
         nb = nbformat.read(self.nb_input_path, nbformat.NO_CONVERT)
-        await self.collect_skip_profiling_cell_indexes(nb)
+        await self.collect_cells_metadata(nb)
+        await self.get_ui_network_throttling_value(nb)
 
-    async def collect_skip_profiling_cell_indexes(
-        self, notebook: nbformat.NotebookNode
-    ) -> None:
+    async def collect_cells_metadata(self, notebook: nbformat.NotebookNode) -> None:
         """
-        Collect the indexes of cells marked as skip profiling.
+        Collect the indexes of cells marked with specific tags, such as:
+        - SKIP_PROFILING_CELL_TAG
+        - WAIT_FOR_VIZ_CELL_TAG
         Parameters
         ----------
         notebook : nbformat.NotebookNode
             The notebook to read from.
         """
         skip_profiling_cell_indexes = []
+        wait_for_viz_cell_indexes = []
         for cell_index, cell in enumerate(notebook.cells, 1):
-            # Get the nb cell tagged with the specified cell_tag
+            # Get the nb cell tags
             tags = cell.metadata.get("tags", [])
             if self.SKIP_PROFILING_CELL_TAG in tags:
                 skip_profiling_cell_indexes.append(cell_index)
+            if self.WAIT_FOR_VIZ_CELL_TAG in tags:
+                wait_for_viz_cell_indexes.append(cell_index)
 
-        # Assign as frozenset to limit to readonly
         self.skip_profiling_cell_indexes = frozenset(skip_profiling_cell_indexes)
         logger.debug(
             "Profiling metrics for the following cells "
             f"{tuple(self.skip_profiling_cell_indexes)} will not be collected."
         )
+        self.wait_for_viz_cell_indexes = frozenset(wait_for_viz_cell_indexes)
+        logger.debug(
+            "The following cells "
+            f"{tuple(self.wait_for_viz_cell_indexes)} will only wait for "
+            "viz changes (if viz is set)."
+        )
+
+    async def get_ui_network_throttling_value(
+        self, notebook: nbformat.NotebookNode
+    ) -> None:
+        """
+        Collect the ui network throttling value from the notebook if set in the
+        cell tagged as parameters.
+        Parameters
+        ----------
+        notebook : nbformat.NotebookNode
+            The notebook to read from.
+        """
+        ui_network_throttling_value = None
+        for cell in notebook.cells:
+            # Get the nb cell tagged with the specified cell_tag
+            tags = cell.metadata.get("tags", [])
+            if self.PARAMETERS_CELL_TAG in tags:
+                cell_source = cell.source or ""
+                match = re.search(self.UI_NETWORK_THROTTLING_REGEX, cell_source)
+                if match and match.group("value"):
+                    ui_network_throttling_value = float(match.group("value"))
+                # Once a cell tagged as parameters has been found, there is no need
+                # to keep looking
+                break
+        self.ui_network_throttling_value = ui_network_throttling_value
 
     async def close(self) -> None:
         """
