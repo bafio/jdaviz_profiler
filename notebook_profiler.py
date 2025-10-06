@@ -25,6 +25,7 @@ import requests
 from chromedriver_py import binary_path
 from PIL import Image
 from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
@@ -280,6 +281,11 @@ class Profiler:
     # to avoid scrollbars and scrolling issues
     VIEWPORT_SIZE = {"width": 1600, "height": 20000}
 
+    # Window size options
+    WINDOW_SIZE_OPTION = (
+        f"--window-size={VIEWPORT_SIZE['width']},{VIEWPORT_SIZE['height']}"
+    )
+
     # CSS style to disable the pulsing animation that can interfere
     # with screenshots taking
     PAGE_STYLE_TAG_CONTENT = ".viewer-label.pulse {animation: none !important;}"
@@ -306,7 +312,7 @@ class Profiler:
 
     # The regex to find the ui_network_throttling value
     UI_NETWORK_THROTTLING_REGEX = (
-        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>\d+(\.\d+)?)"
+        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>[-+]?\d+).*"
     )
 
     # Selector for the jdaviz app viz element
@@ -383,8 +389,26 @@ class Profiler:
         # "network_bandwith" value
         await self.inspect_notebook()
 
+        options = Options()
+        options.add_argument(self.WINDOW_SIZE_OPTION)
+
+        if self.headless:
+            options.add_argument("--headless=new")
+
         # Launch the browser and create a new page
-        self._driver = Chrome(service=ChromeService(executable_path=binary_path))
+        self._driver = Chrome(
+            options=options, service=ChromeService(executable_path=binary_path)
+        )
+
+        # Navigate to the notebook URL
+        logger.info(f"Navigating to {self.url}")
+        self.driver.get(self.url)
+
+        # Wait for the notebook to load
+        WebDriverWait(self.driver, 10).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, self.NB_SELECTOR))
+        )
+        logger.debug("Notebook loaded")
 
         # If ui_network_throttling_value is not None, set up the network throttling
         if self.ui_network_throttling_value is not None:
@@ -399,10 +423,6 @@ class Profiler:
         self.driver.set_window_size(*self.VIEWPORT_SIZE.values())
         logger.debug("Page viewport set")
 
-        # Navigate to the notebook URL
-        logger.info(f"Navigating to {self.url}")
-        self.driver.get(self.url)
-
         # Apply custom CSS styles
         self.driver.execute_script(
             "const style = document.createElement('style'); "
@@ -415,11 +435,6 @@ class Profiler:
         """
         Run the profiling process.
         """
-        # Wait for the notebook to load
-        WebDriverWait(self.driver, 10).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, self.NB_SELECTOR))
-        )
-
         # Wait a bit to ensure the page is fully loaded
         sleep_time = 5
         logger.info(f"Sleeping {sleep_time} seconds to ensure full load...")
@@ -581,7 +596,8 @@ class Profiler:
                 match = re.search(self.UI_NETWORK_THROTTLING_REGEX, cell_source)
                 if match and match.group("value"):
                     value = int(match.group("value"))
-                    self.ui_network_throttling_value = value * MEGABYTE
+                    if value > 0:
+                        self.ui_network_throttling_value = value * MEGABYTE
                 # Once a cell tagged as parameters has been found, there is no need
                 # to keep looking
                 return
