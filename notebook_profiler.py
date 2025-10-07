@@ -379,6 +379,8 @@ class Profiler:
         self._screenshots_dir_path = screenshots_dir_path
         self._driver = None
         self._viz_element = None
+        self._executable_cells = tuple()
+        self.metrics = {}
         self.ui_network_throttling_value = None
         self.skip_profiling_cell_indexes = frozenset()
         self.wait_for_viz_cell_indexes = frozenset()
@@ -410,6 +412,10 @@ class Profiler:
     @property
     def viz_element(self) -> VizElement | None:
         return self._viz_element
+
+    @property
+    def executable_cells(self) -> tuple[ExecutableCell, ...]:
+        return self._executable_cells
 
     async def setup(self) -> None:
         """
@@ -477,43 +483,72 @@ class Profiler:
         await asyncio.sleep(sleep_time)
 
         # Collect cells to execute
-        executable_cells = await self.collect_executable_cells()
+        await self.collect_executable_cells()
 
         # Start profiling
         logger.info("Starting profiling...")
 
         sleep_time = 2
         # Execute each cell and wait for outputs
-        for executable_cell in executable_cells:
+        for executable_cell in self.executable_cells:
             await executable_cell.execute()
             # Wait a bit to ensure stability before moving to the next cell
             logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
             await asyncio.sleep(sleep_time)
 
-        # Log the total execution time for all cells
-        total_execution_time = sum(
-            executable_cell.execution_time for executable_cell in executable_cells
-        )
-        total_cpu_usage = sum(
-            executable_cell.cpu_usage for executable_cell in executable_cells
-        ) / len(executable_cells)
-        total_memory_usage = sum(
-            executable_cell.memory_usage for executable_cell in executable_cells
-        ) / len(executable_cells)
+        # Collect performance metrics
+        await self.collect_performance_metrics()
+
+        # Log performance metrics
+        logger.info("All the cells in the notebook have been executed. ")
         logger.info(
-            "All the cells in the notebook have been executed. "
-            f"The total execution time is: {timedelta(seconds=total_execution_time)} "
-            f"Average CPU usage: {total_cpu_usage:.2f}%. "
-            f"Average Memory usage: {total_memory_usage:.2f}%"
+            f"The total execution time is: {self.metrics['total_execution_time']} "
         )
+        logger.info(f"Average CPU usage: {self.metrics['average_cpu_usage']:.2f}% ")
+        logger.info(
+            f"Average Memory usage: {self.metrics['average_memory_usage']:.2f}% "
+        )
+        logger.info(
+            f"Total data received: {self.metrics['total_data_received']:.2f} MB"
+        )
+        logger.info("Profiling completed.")
+
+    async def collect_performance_metrics(self) -> None:
+        """
+        Collect performance metrics from the executed cells.
+        """
+        # Count how many cells were marked as to skip profiling
+        skipped_profiling_cells_count = sum(
+            1
+            for executable_cell in self.executable_cells
+            if executable_cell.skip_profiling
+        )
+        # Collect the total execution time for all cells
+        total_execution_time = sum(
+            executable_cell.execution_time
+            for executable_cell in self.executable_cells
+            if not executable_cell.skip_profiling
+        )
+        self.metrics["total_execution_time"] = timedelta(seconds=total_execution_time)
+        # Collect the average CPU usage for all cells
+        self.metrics["average_cpu_usage"] = sum(
+            executable_cell.cpu_usage
+            for executable_cell in self.executable_cells
+            if not executable_cell.skip_profiling
+        ) / (len(self.executable_cells) - skipped_profiling_cells_count)
+        # Collect the average Memory usage for all cells
+        self.metrics["average_memory_usage"] = sum(
+            executable_cell.memory_usage
+            for executable_cell in self.executable_cells
+            if not executable_cell.skip_profiling
+        ) / (len(self.executable_cells) - skipped_profiling_cells_count)
+        # Collect the total data received during the notebook execution
         data_received = 0
         for entry in self.driver.get_log("performance"):
             message = json.loads(entry.get("message", {})).get("message", {})
             if message.get("method", "") == "Network.dataReceived":
                 data_received += message.get("params", {}).get("dataLength", 0)
-        logger.info(f"Total data received: {data_received / MEGABYTE:.2f} MB")
-
-        logger.info("Profiling completed.")
+        self.metrics["total_data_received"] = data_received / MEGABYTE  # in MB
 
     async def detect_viz_element(self) -> None:
         """
@@ -574,7 +609,7 @@ class Profiler:
         nb_cells = self.driver.find_elements(By.CSS_SELECTOR, self.NB_CELLS_SELECTOR)
 
         # Store cells in an ordered dictionary with their index
-        executable_cells = [
+        self._executable_cells = tuple(
             ExecutableCell(
                 cell=cell,
                 index=i,
@@ -583,9 +618,8 @@ class Profiler:
                 profiler=self,
             )
             for i, cell in enumerate(nb_cells, 1)
-        ]
-        logger.info(f"Number of cells in the notebook: {len(executable_cells)}")
-        return executable_cells
+        )
+        logger.info(f"Number of cells in the notebook: {len(self.executable_cells)}")
 
     async def inspect_notebook(self) -> None:
         """
