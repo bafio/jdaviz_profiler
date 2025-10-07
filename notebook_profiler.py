@@ -421,13 +421,19 @@ class Profiler:
 
         options = Options()
         options.add_argument(self.WINDOW_SIZE_OPTION)
+        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
         if self.headless:
             options.add_argument("--headless=new")
 
+        # desired_capabilities = DesiredCapabilities.CHROME
+        # desired_capabilities["goog:loggingPrefs"] = {"performance": "ALL"}
+
         # Launch the browser and create a new page
         self._driver = Chrome(
-            options=options, service=ChromeService(executable_path=binary_path)
+            options=options,
+            service=ChromeService(executable_path=binary_path),
+            # desired_capabilities=desired_capabilities,
         )
 
         # Navigate to the notebook URL
@@ -488,10 +494,25 @@ class Profiler:
         total_execution_time = sum(
             executable_cell.execution_time for executable_cell in executable_cells
         )
+        total_cpu_usage = sum(
+            executable_cell.cpu_usage for executable_cell in executable_cells
+        ) / len(executable_cells)
+        total_memory_usage = sum(
+            executable_cell.memory_usage for executable_cell in executable_cells
+        ) / len(executable_cells)
         logger.info(
             "All the cells in the notebook have been executed. "
-            f"The total execution time is: {timedelta(seconds=total_execution_time)}"
+            f"The total execution time is: {timedelta(seconds=total_execution_time)} "
+            f"Average CPU usage: {total_cpu_usage:.2f}%. "
+            f"Average Memory usage: {total_memory_usage:.2f}%"
         )
+        data_received = 0
+        for entry in self.driver.get_log("performance"):
+            message = json.loads(entry.get("message", {})).get("message", {})
+            if message.get("method", "") == "Network.dataReceived":
+                data_received += message.get("params", {}).get("dataLength", 0)
+        logger.info(f"Total data received: {data_received / MEGABYTE:.2f} MB")
+
         logger.info("Profiling completed.")
 
     async def detect_viz_element(self) -> None:
