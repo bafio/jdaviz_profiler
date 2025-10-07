@@ -21,6 +21,7 @@ from os.path import join as os_path_join
 from time import gmtime, perf_counter_ns, strftime, time
 
 import nbformat
+import psutil
 import requests
 from chromedriver_py import binary_path
 from PIL import Image
@@ -156,6 +157,8 @@ class ExecutableCell:
         self._wait_for_viz = wait_for_viz
         self._profiler = profiler
         self.execution_time = 0
+        self.cpu_usage = 0
+        self.memory_usage = 0
 
     @property
     def cell(self) -> WebElement:
@@ -216,9 +219,21 @@ class ExecutableCell:
             self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
 
             # Initialize variables to track the viz element and elapsed time
-            viz_is_stable, timer, time_elapsed = False, time(), 0
+            viz_is_stable = False
+            time_elapsed = 0
+            cpu_usage = []
+            memory_usage = []
+            timer = time()
 
             while True:
+                if not self.skip_profiling:
+                    # Capture CPU usage
+                    cpu_usage.append(
+                        psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+                    )
+                    # Capture memory usage
+                    memory_usage.append(psutil.virtual_memory().percent)
+
                 # Wait a bit before checking again
                 await asyncio.sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
 
@@ -261,11 +276,26 @@ class ExecutableCell:
                     time_elapsed = time() - timer
                     break
 
-            # save time elapsed
-            self.execution_time = time_elapsed if not self.skip_profiling else 0
+            if self.skip_profiling:
+                self.execution_time = 0
+                self.cpu_usage = 0
+                self.memory_usage = 0
+            else:
+                self.execution_time = time_elapsed
+                cpu_usage.append(
+                    psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+                )
+                self.cpu_usage = sum(cpu_usage) / len(cpu_usage) if cpu_usage else 0
+                memory_usage.append(psutil.virtual_memory().percent)
+                self.memory_usage = (
+                    sum(memory_usage) / len(memory_usage) if memory_usage else 0
+                )
+
             # Log the time elapsed for the cell execution
             logger.info(
-                f"Cell {self.index} completed in {self.execution_time:.2f} seconds"
+                f"Cell {self.index} completed in {self.execution_time:.2f} seconds. "
+                f"Average CPU usage: {self.cpu_usage:.2f}%. "
+                f"Average Memory usage: {self.memory_usage:.2f}%"
             )
 
         except Exception as e:
@@ -905,9 +935,11 @@ async def profile_notebook(
         nb_input_path=nb_input_path,
         screenshots_dir_path=screenshots_dir_path,
     )
-    await profiler.setup()
-    await profiler.run()
-    await profiler.close()
+    try:
+        await profiler.setup()
+        await profiler.run()
+    finally:
+        await profiler.close()
 
     # Clean up by deleting the uploaded notebook
     await jupyter_lab_helper.delete_notebook()
