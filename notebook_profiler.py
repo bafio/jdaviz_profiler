@@ -352,7 +352,6 @@ class Profiler:
         self,
         url: str,
         headless: str,
-        max_wait_time: int,
         nb_input_path: str,
         screenshots_dir_path: str = None,
     ) -> None:
@@ -364,8 +363,6 @@ class Profiler:
             The URL of the notebook to profile.
         headless : bool
             Whether to run in headless mode.
-        max_wait_time : int
-            Time to wait after executing each cell (in seconds).
         nb_input_path : str
             Path to the input notebook to be profiled.
         screenshots_dir_path : str, optional
@@ -374,7 +371,6 @@ class Profiler:
         """
         self._url = url
         self._headless = headless
-        self._max_wait_time = max_wait_time
         self._nb_input_path = nb_input_path
         self._screenshots_dir_path = screenshots_dir_path
         self._driver = None
@@ -392,10 +388,6 @@ class Profiler:
     @property
     def headless(self) -> bool:
         return self._headless
-
-    @property
-    def max_wait_time(self) -> int:
-        return self._max_wait_time
 
     @property
     def nb_input_path(self) -> str:
@@ -913,7 +905,6 @@ async def profile_notebook(
     kernel_name: str,
     nb_input_path: str,
     headless: bool,
-    max_wait_time: int,
     screenshots_dir_path: str | None = None,
     log_level: str = "INFO",
 ) -> None:
@@ -931,8 +922,6 @@ async def profile_notebook(
         Path to the input notebook to be profiled.
     headless : bool
         Whether to run in headless mode.
-    max_wait_time : int
-        Max time to wait after executing each cell (in seconds).
     screenshots_dir_path : str, optional
         Path to the directory to where screenshots will be stored, if not passed as
         an argument, screenshots will not be logged.
@@ -956,7 +945,6 @@ async def profile_notebook(
         f"Kernel Name: {kernel_name} -- "
         f"Input Notebook Path: {nb_input_path} -- "
         f"Headless: {headless} -- "
-        f"Max Wait Time: {max_wait_time} -- "
         f"Screenshots Dir Path: {screenshots_dir_path} -- "
         f"Log Level: {log_level}"
     )
@@ -986,7 +974,6 @@ async def profile_notebook(
     profiler = Profiler(
         url=jupyter_lab_helper.notebook_url,
         headless=headless,
-        max_wait_time=max_wait_time,
         nb_input_path=nb_input_path,
         screenshots_dir_path=screenshots_dir_path,
     )
@@ -1041,13 +1028,6 @@ if __name__ == "__main__":
         type=bool,
         default=False,
         choices=[True, False],
-    )
-    parser.add_argument(
-        "--max_wait_time",
-        help="Max time to wait after executing each cell (in seconds, default: 10).",
-        required=False,
-        type=int,
-        default=10,
     )
     parser.add_argument(
         "--screenshots_dir_path",
