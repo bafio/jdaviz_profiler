@@ -10,17 +10,20 @@ $> python profiler.py --url <JupyterLab URL> --token <API Token> \
 
 import argparse
 import asyncio
+import csv
 import json
 import logging
 import random
 import re
-from dataclasses import dataclass, field
+from collections import OrderedDict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from io import BytesIO
 from os import linesep, makedirs
 from os.path import basename, splitext
 from os.path import join as os_path_join
 from time import gmtime, perf_counter_ns, strftime, time
+from typing import Any
 
 import nbformat
 import psutil
@@ -38,6 +41,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from jupyter_lab_helper import JupyterLabHelper
+from utils import parse_assignments
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -103,6 +107,11 @@ class PerformanceMetrics:
     total_data_received: float = 0
     average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
     average_memory_usage_list: list[float] = field(default_factory=list, repr=False)
+
+    @staticmethod
+    def dict_factory(data: list[tuple[str, Any]]) -> OrderedDict[str, Any]:
+        exclude_keys = ("average_cpu_usage_list", "average_memory_usage_list")
+        return OrderedDict({k: v for (k, v) in data if k not in exclude_keys})
 
     def compute_metrics(self) -> None:
         """Compute the average CPU and memory usage from the recorded lists."""
@@ -329,10 +338,14 @@ class Profiler:
     url: str
     headless: bool
     nb_input_path: str
-    screenshots_dir_path: str | None = None
+    screenshots_dir_path: str | None = field(default=None, repr=True)
+    metrics_dir_path: str | None = field(default=None, repr=True)
     driver: WebDriver | None = field(default=None, repr=False)
     viz_element: WebElement | None = field(default=None, repr=False)
     executable_cells: tuple = field(default_factory=tuple, repr=False)
+    nb_params_dict: OrderedDict[str, Any] = field(
+        default_factory=OrderedDict, repr=False
+    )
     ui_network_throttling_value: float | None = field(default=None, repr=False)
     skip_profiling_cell_indexes: frozenset = field(
         default_factory=frozenset, repr=False
@@ -375,11 +388,6 @@ class Profiler:
     # The parameter name holding the ui_network_throttling value
     UI_NETWORK_THROTTLING_PARAM = "ui_network_throttling"
 
-    # The regex to find the ui_network_throttling value
-    UI_NETWORK_THROTTLING_REGEX = (
-        rf".*{UI_NETWORK_THROTTLING_PARAM}\s*\=\s*(?P<value>[-+]?\d+).*"
-    )
-
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR = ".jdaviz.imviz"
 
@@ -415,11 +423,13 @@ class Profiler:
         await self.wait_for_notebook_to_load()
 
         # If ui_network_throttling_value is not None, set up the network throttling
-        if self.ui_network_throttling_value is not None:
+        if self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM) is not None:
             self.driver.set_network_conditions(
                 offline=False,
                 latency=0,
-                download_throughput=self.ui_network_throttling_value,
+                download_throughput=self.nb_params_dict[
+                    self.UI_NETWORK_THROTTLING_PARAM
+                ],
                 upload_throughput=-1,  # -1 means no throttling
             )
 
@@ -478,34 +488,10 @@ class Profiler:
         # Log the performance metrics
         logger.info(str(self.performance_metrics))
 
-        # # # save the profiling metrics to a csv file
-        # # await self.save_performance_metrics()
+        # save the profiling metrics to a csv file
+        await self.save_performance_metrics()
 
         logger.info("Profiling completed.")
-
-    # async def save_performance_metrics(self) -> None:
-    #     """
-    #     Save the profiling metrics to a CSV file.
-    #     """
-    #     # # Collect performance metrics
-    #     # await self.collect_performance_metrics()
-
-    #     csv_file_path = f"{splitext(self.nb_input_path)[0]}_profiling_metrics.csv"
-    #     logger.info(f"Saving profiling metrics to {csv_file_path}...")
-    #     with open(csv_file_path, "w") as f:
-    #         # Write header
-    #         f.write(
-    #             "cell_index,skip_profiling,wait_for_viz,execution_time,cpu_usage,"
-    #             "memory_usage,data_received\n"
-    #         )
-    #         # Write metrics for each cell
-    #         for executable_cell in self.executable_cells:
-    #             f.write(
-    #                 f"{executable_cell.index},{executable_cell.skip_profiling},"
-    #                 f"{executable_cell.wait_for_viz},{executable_cell.execution_time},"
-    #                 f"{executable_cell.cpu_usage},{executable_cell.memory_usage},"
-    #                 f"{executable_cell.data_received}\n"
-    #             )
 
     async def get_data_received(
         self, timestamp_start: datetime, timestamp_end: datetime
@@ -542,6 +528,34 @@ class Profiler:
         if viz_element:
             self.viz_element = VizElement(element=viz_element, profiler=self)
             logger.debug("Viz element detected and assigned")
+
+    async def save_performance_metrics(self) -> None:
+        """
+        Save the profiling metrics to a CSV file.
+        """
+        try:
+            if self.metrics_dir_path is None:
+                logger.debug("Not saving metrics")
+                return
+            file_path_name = os_path_join(
+                self.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
+            )
+            first_columns = {"notebook_path": self.nb_input_path}
+            metrics_dict = asdict(
+                self.performance_metrics,
+                dict_factory=NotebookPerformanceMetrics.dict_factory,
+            )
+            data = [OrderedDict(**first_columns, **self.nb_params_dict, **metrics_dict)]
+            fieldnames = list(data[0].keys())
+            with open(file_path_name, "w", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(data)
+
+            logger.info(f"Metrics saved successfully to {file_path_name}")
+        except Exception as e:
+            # In case of an exception: log it and move on (do not block!)
+            logger.exception(f"An exception occurred during metrics saving: {e}")
 
     async def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
         """
@@ -610,7 +624,7 @@ class Profiler:
         """
         nb = nbformat.read(self.nb_input_path, nbformat.NO_CONVERT)
         await self.collect_cells_metadata(nb)
-        await self.get_ui_network_throttling_value(nb)
+        await self.extract_nb_parameters_as_ordered_dict(nb)
         self.performance_metrics.total_cells = len(nb.cells)
         self.performance_metrics.profiled_cells = (
             self.performance_metrics.total_cells - len(self.skip_profiling_cell_indexes)
@@ -648,12 +662,12 @@ class Profiler:
             "viz changes (if viz is set)."
         )
 
-    async def get_ui_network_throttling_value(
+    async def extract_nb_parameters_as_ordered_dict(
         self, notebook: nbformat.NotebookNode
     ) -> None:
         """
-        Collect the ui network throttling value from the notebook if set in the
-        cell tagged as parameters.
+        Collect the notebook parameters from the cell tagged as parameters and
+        store them as an ordered dictionary.
         Parameters
         ----------
         notebook : nbformat.NotebookNode
@@ -664,14 +678,10 @@ class Profiler:
             tags = cell.metadata.get("tags", [])
             if self.PARAMETERS_CELL_TAG in tags:
                 cell_source = cell.source or ""
-                match = re.search(self.UI_NETWORK_THROTTLING_REGEX, cell_source)
-                if match and match.group("value"):
-                    value = int(match.group("value"))
-                    if value > 0:
-                        self.ui_network_throttling_value = value * MEGABYTE
-                # Once a cell tagged as parameters has been found, there is no need
-                # to keep looking
+                self.nb_params_dict = parse_assignments(cell_source)
+                logger.debug(f"Notebook parameters found: {self.nb_params_dict}")
                 return
+        logger.debug("No notebook parameters found.")
 
     async def wait_for_notebook_to_load(self) -> None:
         """
@@ -692,7 +702,8 @@ class Profiler:
                 return
             except TimeoutException:
                 logger.warning(
-                    f"Error waiting for notebook to load, retrying... {attempt + 1}/{max_retries}"
+                    "Error waiting for notebook to load, "
+                    f"retrying... {attempt + 1}/{max_retries}"
                 )
                 retry_delay *= 2  # Double the delay for the next attempt
                 retry_delay += random.uniform(0, 1)  # Add jitter
@@ -713,6 +724,7 @@ async def profile_notebook(
     nb_input_path: str,
     headless: bool,
     screenshots_dir_path: str | None = None,
+    metrics_dir_path: str | None = None,
     log_level: str = "INFO",
 ) -> None:
     """
@@ -732,6 +744,9 @@ async def profile_notebook(
     screenshots_dir_path : str, optional
         Path to the directory to where screenshots will be stored, if not passed as
         an argument, screenshots will not be logged.
+    metrics_dir_path : str, optional
+        Path to the directory to where metrics will be stored, if not passed as
+        an argument, metrics will not be saved to file.
     log_level : str, optional
         Set the logging level (default: INFO).
     Raises
@@ -753,6 +768,7 @@ async def profile_notebook(
         f"Input Notebook Path: {nb_input_path} -- "
         f"Headless: {headless} -- "
         f"Screenshots Dir Path: {screenshots_dir_path} -- "
+        f"Metrics Dir Path: {metrics_dir_path} -- "
         f"Log Level: {log_level}"
     )
 
@@ -777,12 +793,23 @@ async def profile_notebook(
         )
         makedirs(screenshots_dir_path, exist_ok=True)
 
+    if metrics_dir_path:
+        # Create the directory(ies), if not yet created, in where the metrics
+        # will be saved. e.g.: <metrics_dir_path>/<nb_filename_wo_ext>/<YYYY_MM_DD>/
+        metrics_dir_path = os_path_join(
+            metrics_dir_path,
+            splitext(basename(nb_input_path))[0],
+            strftime("%Y_%m_%d", gmtime()),
+        )
+        makedirs(metrics_dir_path, exist_ok=True)
+
     # Start Selenium and run the profiler
     profiler = Profiler(
         url=jupyter_lab_helper.notebook_url,
         headless=headless,
         nb_input_path=nb_input_path,
         screenshots_dir_path=screenshots_dir_path,
+        metrics_dir_path=metrics_dir_path,
     )
     try:
         await profiler.setup()
@@ -841,6 +868,13 @@ if __name__ == "__main__":
         help=(
             "Path to the directory to where screenshots will be stored (default: None)."
         ),
+        required=False,
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--metrics_dir_path",
+        help=("Path to the directory to where metrics will be stored (default: None)."),
         required=False,
         type=str,
         default=None,

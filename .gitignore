@@ -74,3 +74,4 @@ pip-wheel-metadata
 # Jupyter Notebooks
 */notebooks/*.ipynb
 */screenshots/*
+*/metrics/*

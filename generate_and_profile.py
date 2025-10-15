@@ -32,6 +32,7 @@ async def generate_and_profile(
     kernel_name: str,
     headless: bool,
     log_screenshots: bool = False,
+    save_metrics: bool = False,
     log_level: str = "INFO",
 ) -> None:
     """
@@ -50,6 +51,8 @@ async def generate_and_profile(
         Whether to run in headless mode.
     log_screenshots : bool, optional
         Whether to log screenshots or not (default: False).
+    save_metrics : bool, optional
+        Whether to save profiling metrics to a CSV file (default: False).
     log_level : str, optional
         Set the logging level (default: "INFO").
     """
@@ -63,6 +66,7 @@ async def generate_and_profile(
         f"Kernel Name: {kernel_name} -- "
         f"Headless: {headless} -- "
         f"Log Screenshots: {log_screenshots} -- "
+        f"Save Metrics: {save_metrics} -- "
         f"Log Level: {log_level}"
     )
 
@@ -75,6 +79,11 @@ async def generate_and_profile(
     else:
         screenshots_dir_path = None
 
+    if save_metrics:
+        metrics_dir_path = os_path_join(input_dir_path, "metrics")
+    else:
+        metrics_dir_path = None
+
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
 
@@ -86,6 +95,7 @@ async def generate_and_profile(
             headless=headless,
             screenshots_dir_path=screenshots_dir_path,
             log_level=log_level,
+            metrics_dir_path=metrics_dir_path,
         )
 
 
@@ -137,6 +147,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_screenshots",
         help="Whether to log screenshots or not (default: False).",
+        required=False,
+        type=bool,
+        default=False,
+        choices=[True, False],
+    )
+    parser.add_argument(
+        "--save_metrics",
+        help="Whether to save profiling metrics to a CSV file (default: False).",
         required=False,
         type=bool,
         default=False,
