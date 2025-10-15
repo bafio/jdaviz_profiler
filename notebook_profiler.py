@@ -12,8 +12,10 @@ import argparse
 import asyncio
 import json
 import logging
+import random
 import re
-from datetime import timedelta
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from io import BytesIO
 from os import linesep, makedirs
 from os.path import basename, splitext
@@ -22,9 +24,9 @@ from time import gmtime, perf_counter_ns, strftime, time
 
 import nbformat
 import psutil
-import requests
 from chromedriver_py import binary_path
 from PIL import Image
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import Chrome
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -34,6 +36,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
+from jupyter_lab_helper import JupyterLabHelper
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
@@ -47,32 +51,15 @@ KILOBYTE = 1024
 MEGABYTE = 1024 * KILOBYTE
 
 
+@dataclass(eq=False, frozen=True)
 class VizElement:
     """Class representing the viz element in a Jupyter notebook."""
 
+    element: WebElement
+    profiler: "Profiler"
+
     # Seconds to wait during the screenshots taking
     WAIT_TIME_DURING_SCREENSHOTS = 0.5
-
-    def __init__(self, element: WebElement, profiler: "Profiler") -> None:
-        """
-        Initialize the VizElement with a Selenium WebElement.
-        Parameters
-        ----------
-        element : WebElement
-            The Selenium WebElement representing the viz element.
-        profiler : Profiler
-            The Profiler instance.
-        """
-        self._element = element
-        self._profiler = profiler
-
-    @property
-    def element(self) -> WebElement:
-        return self._element
-
-    @property
-    def profiler(self) -> "Profiler":
-        return self._profiler
 
     async def is_stable(self, cell_index: int) -> bool:
         """
@@ -106,8 +93,74 @@ class VizElement:
         return screenshots_are_the_same
 
 
+@dataclass
+class PerformanceMetrics:
+    """Class representing performance metrics."""
+
+    total_execution_time: float = 0
+    average_cpu_usage: float = 0
+    average_memory_usage: float = 0
+    total_data_received: float = 0
+    average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
+    average_memory_usage_list: list[float] = field(default_factory=list, repr=False)
+
+    def compute_metrics(self) -> None:
+        """Compute the average CPU and memory usage from the recorded lists."""
+        if self.average_cpu_usage_list:
+            self.average_cpu_usage = sum(self.average_cpu_usage_list) / len(
+                self.average_cpu_usage_list
+            )
+        if self.average_memory_usage_list:
+            self.average_memory_usage = sum(self.average_memory_usage_list) / len(
+                self.average_memory_usage_list
+            )
+
+    def __str__(self) -> str:
+        return (
+            f"Total Execution Time: {self.total_execution_time:.2f} seconds. "
+            f"Average CPU usage: {self.average_cpu_usage:.2f}%. "
+            f"Average Memory usage: {self.average_memory_usage:.2f}%. "
+            f"Total Data received: {self.total_data_received:.2f} MB."
+        )
+
+
+@dataclass
+class CellPerformanceMetrics(PerformanceMetrics):
+    """Class representing cell performance metrics."""
+
+    cell_index: int = 0
+
+    def __str__(self) -> str:
+        return f"Cell {self.cell_index}: {super().__str__()}"
+
+
+@dataclass
+class NotebookPerformanceMetrics(PerformanceMetrics):
+    """Class representing notebook performance metrics."""
+
+    total_cells: int = 0
+    profiled_cells: int = 0
+
+    def __str__(self) -> str:
+        return (
+            f"Notebook with {self.total_cells} cells, "
+            f"of which {self.profiled_cells} were profiled. "
+            f"{super().__str__()}"
+        )
+
+
+@dataclass
 class ExecutableCell:
     """Class representing an executable cell in a Jupyter notebook."""
+
+    cell: WebElement
+    index: int
+    skip_profiling: bool
+    wait_for_viz: bool
+    profiler: "Profiler"
+    performance_metrics: CellPerformanceMetrics = field(
+        default_factory=CellPerformanceMetrics, repr=False
+    )
 
     # Seconds to wait after the execution command if no need to
     # collect profiling metrics
@@ -127,58 +180,8 @@ class ExecutableCell:
     # Regex to identify the cell output containing the `DONE` text output
     OUTPUT_CELL_DONE_REGEX = r"^.*(?P<DONE>DONE).*$"
 
-    def __init__(
-        self,
-        cell: WebElement,
-        index: int,
-        skip_profiling: bool,
-        wait_for_viz: bool,
-        profiler: "Profiler",
-    ) -> None:
-        """
-        Initialize the ExecutableCell with a Selenium WebElement and an optional index.
-        Parameters
-        ----------
-        cell : WebElement
-            The Selenium WebElement representing the cell.
-        index : int
-            The index of the cell.
-        skip_profiling : bool
-            Mark the ExecutableCell as to skip the collectection or not of
-            profiling metrics during its execution.
-        wait_for_viz : bool
-            Mark the ExecutableCell as to wait if viz is stable
-        profiler : Profiler
-            The Profiler instance.
-        """
-        self._cell = cell
-        self._index = index
-        self._skip_profiling = skip_profiling
-        self._wait_for_viz = wait_for_viz
-        self._profiler = profiler
-        self.execution_time = 0
-        self.cpu_usage = 0
-        self.memory_usage = 0
-
-    @property
-    def cell(self) -> WebElement:
-        return self._cell
-
-    @property
-    def index(self) -> int:
-        return self._index
-
-    @property
-    def skip_profiling(self) -> bool:
-        return self._skip_profiling
-
-    @property
-    def wait_for_viz(self) -> bool:
-        return self._wait_for_viz
-
-    @property
-    def profiler(self) -> "Profiler":
-        return self._profiler
+    def __post_init__(self):
+        self.performance_metrics.cell_index = self.index
 
     async def look_for_done_statement(self) -> bool:
         """
@@ -210,29 +213,51 @@ class ExecutableCell:
                 return True
         return False
 
+    async def compute_performance_metrics(self) -> None:
+        """
+        Compute profiling metrics for the cell.
+        """
+        if self.skip_profiling:
+            self.performance_metrics.total_execution_time = 0
+            self.performance_metrics.average_cpu_usage = 0
+            self.performance_metrics.average_memory_usage = 0
+            self.performance_metrics.total_data_received = 0
+            return
+
+        timestamp_end = datetime.now()
+        timestamp_start = timestamp_end - timedelta(
+            seconds=self.performance_metrics.total_execution_time
+        )
+        self.performance_metrics.total_data_received = (
+            await self.profiler.get_data_received(timestamp_start, timestamp_end)
+        )
+        self.performance_metrics.compute_metrics()
+
     async def execute(self) -> None:
+        """
+        Execute the cell and collect profiling metrics.
+        """
         try:
             logger.info(f"Executing cell {self.index}")
+
+            # Initialize variables to track the viz element and elapsed time
+            viz_is_stable = False
+            start_time = time()
+
             # Click on the cell
             self.cell.click()
             # Execute the cell
             self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
 
-            # Initialize variables to track the viz element and elapsed time
-            viz_is_stable = False
-            time_elapsed = 0
-            cpu_usage = []
-            memory_usage = []
-            timer = time()
-
             while True:
-                if not self.skip_profiling:
-                    # Capture CPU usage
-                    cpu_usage.append(
-                        psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-                    )
-                    # Capture memory usage
-                    memory_usage.append(psutil.virtual_memory().percent)
+                # Capture CPU usage
+                self.performance_metrics.average_cpu_usage_list.append(
+                    psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+                )
+                # Capture memory usage
+                self.performance_metrics.average_memory_usage_list.append(
+                    psutil.virtual_memory().percent
+                )
 
                 # Wait a bit before checking again
                 await asyncio.sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
@@ -250,8 +275,8 @@ class ExecutableCell:
                         f"Cell {self.index} is not tagged as to wait for viz changes, "
                         "moving on..."
                     )
-                    # save time elapsed
-                    time_elapsed = time() - timer
+                    # Save time elapsed
+                    self.performance_metrics.total_execution_time = time() - start_time
                     break
 
                 logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
@@ -272,31 +297,24 @@ class ExecutableCell:
                     logger.debug(
                         f"Cell {self.index} viz element is stable, moving on..."
                     )
-                    # save time elapsed
-                    time_elapsed = time() - timer
+                    # Save time elapsed
+                    self.performance_metrics.total_execution_time = time() - start_time
                     break
 
-            if self.skip_profiling:
-                self.execution_time = 0
-                self.cpu_usage = 0
-                self.memory_usage = 0
-            else:
-                self.execution_time = time_elapsed
-                cpu_usage.append(
-                    psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-                )
-                self.cpu_usage = sum(cpu_usage) / len(cpu_usage) if cpu_usage else 0
-                memory_usage.append(psutil.virtual_memory().percent)
-                self.memory_usage = (
-                    sum(memory_usage) / len(memory_usage) if memory_usage else 0
-                )
-
-            # Log the time elapsed for the cell execution
-            logger.info(
-                f"Cell {self.index} completed in {self.execution_time:.2f} seconds. "
-                f"Average CPU usage: {self.cpu_usage:.2f}%. "
-                f"Average Memory usage: {self.memory_usage:.2f}%"
+            # Capture CPU usage
+            self.performance_metrics.average_cpu_usage_list.append(
+                psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
             )
+            # Capture memory usage
+            self.performance_metrics.average_memory_usage_list.append(
+                psutil.virtual_memory().percent
+            )
+
+            # Compute performance metrics
+            await self.compute_performance_metrics()
+
+            # Log the performance metrics
+            logger.info(str(self.performance_metrics))
 
         except Exception as e:
             logger.exception(
@@ -304,8 +322,25 @@ class ExecutableCell:
             )
 
 
+@dataclass
 class Profiler:
     """Class to profile a Jupyter notebook using Selenium."""
+
+    url: str
+    headless: bool
+    nb_input_path: str
+    screenshots_dir_path: str | None = None
+    driver: WebDriver | None = field(default=None, repr=False)
+    viz_element: WebElement | None = field(default=None, repr=False)
+    executable_cells: tuple = field(default_factory=tuple, repr=False)
+    ui_network_throttling_value: float | None = field(default=None, repr=False)
+    skip_profiling_cell_indexes: frozenset = field(
+        default_factory=frozenset, repr=False
+    )
+    wait_for_viz_cell_indexes: frozenset = field(default_factory=frozenset, repr=False)
+    performance_metrics: NotebookPerformanceMetrics = field(
+        default_factory=NotebookPerformanceMetrics, repr=False
+    )
 
     # The width and height to set for the browser viewport to make the page really tall
     # to avoid scrollbars and scrolling issues
@@ -348,67 +383,6 @@ class Profiler:
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR = ".jdaviz.imviz"
 
-    def __init__(
-        self,
-        url: str,
-        headless: str,
-        nb_input_path: str,
-        screenshots_dir_path: str = None,
-    ) -> None:
-        """
-        Initialize the Profiler with URL, headless mode, and wait time.
-        Parameters
-        ----------
-        url : str
-            The URL of the notebook to profile.
-        headless : bool
-            Whether to run in headless mode.
-        nb_input_path : str
-            Path to the input notebook to be profiled.
-        screenshots_dir_path : str, optional
-            Path to the directory to where screenshots will be stored, if not passed as
-            an argument, screenshots will not be logged.
-        """
-        self._url = url
-        self._headless = headless
-        self._nb_input_path = nb_input_path
-        self._screenshots_dir_path = screenshots_dir_path
-        self._driver = None
-        self._viz_element = None
-        self._executable_cells = tuple()
-        self.metrics = {}
-        self.ui_network_throttling_value = None
-        self.skip_profiling_cell_indexes = frozenset()
-        self.wait_for_viz_cell_indexes = frozenset()
-
-    @property
-    def url(self) -> str:
-        return self._url
-
-    @property
-    def headless(self) -> bool:
-        return self._headless
-
-    @property
-    def nb_input_path(self) -> str:
-        return self._nb_input_path
-
-    @property
-    def screenshots_dir_path(self) -> int:
-        return self._screenshots_dir_path
-
-    @property
-    def driver(self) -> WebDriver:
-        return self._driver
-
-    @property
-    def viz_element(self) -> VizElement | None:
-        return self._viz_element
-
-    @property
-    def executable_cells(self) -> tuple[ExecutableCell, ...]:
-        return self._executable_cells
-
     async def setup(self) -> None:
         """
         Set up the Selenium browser and page.
@@ -418,20 +392,19 @@ class Profiler:
         await self.inspect_notebook()
 
         options = Options()
+        # Set window size option
         options.add_argument(self.WINDOW_SIZE_OPTION)
+        # Enable performance logging to capture network events
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
+        # Set headless mode if specified
         if self.headless:
             options.add_argument("--headless=new")
 
-        # desired_capabilities = DesiredCapabilities.CHROME
-        # desired_capabilities["goog:loggingPrefs"] = {"performance": "ALL"}
-
         # Launch the browser and create a new page
-        self._driver = Chrome(
+        self.driver = Chrome(
             options=options,
             service=ChromeService(executable_path=binary_path),
-            # desired_capabilities=desired_capabilities,
         )
 
         # Navigate to the notebook URL
@@ -439,10 +412,7 @@ class Profiler:
         self.driver.get(self.url)
 
         # Wait for the notebook to load
-        WebDriverWait(self.driver, 10).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, self.NB_SELECTOR))
-        )
-        logger.debug("Notebook loaded")
+        await self.wait_for_notebook_to_load()
 
         # If ui_network_throttling_value is not None, set up the network throttling
         if self.ui_network_throttling_value is not None:
@@ -488,59 +458,79 @@ class Profiler:
             logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
             await asyncio.sleep(sleep_time)
 
-        # Collect performance metrics
-        await self.collect_performance_metrics()
+            if not executable_cell.skip_profiling:
+                self.performance_metrics.total_execution_time += (
+                    executable_cell.performance_metrics.total_execution_time
+                )
+                self.performance_metrics.average_cpu_usage_list.append(
+                    executable_cell.performance_metrics.average_cpu_usage
+                )
+                self.performance_metrics.average_memory_usage_list.append(
+                    executable_cell.performance_metrics.average_memory_usage
+                )
+                self.performance_metrics.total_data_received += (
+                    executable_cell.performance_metrics.total_data_received
+                )
 
-        # Log performance metrics
-        logger.info("All the cells in the notebook have been executed. ")
-        logger.info(
-            f"The total execution time is: {self.metrics['total_execution_time']} "
-        )
-        logger.info(f"Average CPU usage: {self.metrics['average_cpu_usage']:.2f}% ")
-        logger.info(
-            f"Average Memory usage: {self.metrics['average_memory_usage']:.2f}% "
-        )
-        logger.info(
-            f"Total data received: {self.metrics['total_data_received']:.2f} MB"
-        )
+        # Compute performance metrics
+        self.performance_metrics.compute_metrics()
+
+        # Log the performance metrics
+        logger.info(str(self.performance_metrics))
+
+        # # # save the profiling metrics to a csv file
+        # # await self.save_performance_metrics()
+
         logger.info("Profiling completed.")
 
-    async def collect_performance_metrics(self) -> None:
+    # async def save_performance_metrics(self) -> None:
+    #     """
+    #     Save the profiling metrics to a CSV file.
+    #     """
+    #     # # Collect performance metrics
+    #     # await self.collect_performance_metrics()
+
+    #     csv_file_path = f"{splitext(self.nb_input_path)[0]}_profiling_metrics.csv"
+    #     logger.info(f"Saving profiling metrics to {csv_file_path}...")
+    #     with open(csv_file_path, "w") as f:
+    #         # Write header
+    #         f.write(
+    #             "cell_index,skip_profiling,wait_for_viz,execution_time,cpu_usage,"
+    #             "memory_usage,data_received\n"
+    #         )
+    #         # Write metrics for each cell
+    #         for executable_cell in self.executable_cells:
+    #             f.write(
+    #                 f"{executable_cell.index},{executable_cell.skip_profiling},"
+    #                 f"{executable_cell.wait_for_viz},{executable_cell.execution_time},"
+    #                 f"{executable_cell.cpu_usage},{executable_cell.memory_usage},"
+    #                 f"{executable_cell.data_received}\n"
+    #             )
+
+    async def get_data_received(
+        self, timestamp_start: datetime, timestamp_end: datetime
+    ) -> float:
         """
-        Collect performance metrics from the executed cells.
+        Get the total data received between two timestamps from the performance logs.
+        Parameters
+        ----------
+        timestamp_start : datetime
+            The start timestamp.
+        timestamp_end : datetime
+            The end timestamp.
+        Returns
+        -------
+        float
+            The total data received in MB.
         """
-        # Count how many cells were marked as to skip profiling
-        skipped_profiling_cells_count = sum(
-            1
-            for executable_cell in self.executable_cells
-            if executable_cell.skip_profiling
-        )
-        # Collect the total execution time for all cells
-        total_execution_time = sum(
-            executable_cell.execution_time
-            for executable_cell in self.executable_cells
-            if not executable_cell.skip_profiling
-        )
-        self.metrics["total_execution_time"] = timedelta(seconds=total_execution_time)
-        # Collect the average CPU usage for all cells
-        self.metrics["average_cpu_usage"] = sum(
-            executable_cell.cpu_usage
-            for executable_cell in self.executable_cells
-            if not executable_cell.skip_profiling
-        ) / (len(self.executable_cells) - skipped_profiling_cells_count)
-        # Collect the average Memory usage for all cells
-        self.metrics["average_memory_usage"] = sum(
-            executable_cell.memory_usage
-            for executable_cell in self.executable_cells
-            if not executable_cell.skip_profiling
-        ) / (len(self.executable_cells) - skipped_profiling_cells_count)
-        # Collect the total data received during the notebook execution
         data_received = 0
         for entry in self.driver.get_log("performance"):
-            message = json.loads(entry.get("message", {})).get("message", {})
-            if message.get("method", "") == "Network.dataReceived":
-                data_received += message.get("params", {}).get("dataLength", 0)
-        self.metrics["total_data_received"] = data_received / MEGABYTE  # in MB
+            timestamp_entry = datetime.fromtimestamp(entry["timestamp"] / 1000)
+            if timestamp_start < timestamp_entry < timestamp_end:
+                message = json.loads(entry.get("message", {})).get("message", {})
+                if message.get("method", "") == "Network.dataReceived":
+                    data_received += message.get("params", {}).get("dataLength", 0)
+        return data_received / MEGABYTE  # in MB
 
     async def detect_viz_element(self) -> None:
         """
@@ -550,7 +540,7 @@ class Profiler:
             By.CSS_SELECTOR, self.VIZ_ELEMENT_SELECTOR
         )
         if viz_element:
-            self._viz_element = VizElement(element=viz_element, profiler=self)
+            self.viz_element = VizElement(element=viz_element, profiler=self)
             logger.debug("Viz element detected and assigned")
 
     async def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
@@ -601,7 +591,7 @@ class Profiler:
         nb_cells = self.driver.find_elements(By.CSS_SELECTOR, self.NB_CELLS_SELECTOR)
 
         # Store cells in an ordered dictionary with their index
-        self._executable_cells = tuple(
+        self.executable_cells = tuple(
             ExecutableCell(
                 cell=cell,
                 index=i,
@@ -621,6 +611,10 @@ class Profiler:
         nb = nbformat.read(self.nb_input_path, nbformat.NO_CONVERT)
         await self.collect_cells_metadata(nb)
         await self.get_ui_network_throttling_value(nb)
+        self.performance_metrics.total_cells = len(nb.cells)
+        self.performance_metrics.profiled_cells = (
+            self.performance_metrics.total_cells - len(self.skip_profiling_cell_indexes)
+        )
 
     async def collect_cells_metadata(self, notebook: nbformat.NotebookNode) -> None:
         """
@@ -679,224 +673,37 @@ class Profiler:
                 # to keep looking
                 return
 
+    async def wait_for_notebook_to_load(self) -> None:
+        """
+        Wait for the notebook to load by checking for the presence of the notebook
+        element in the DOM.
+        Retries a few times with exponential backoff in case of failure.
+        """
+        max_retries = 5
+        retry_delay = 10 + random.uniform(0, 1)  # Initial delay in seconds with jitter
+        for attempt in range(max_retries):
+            try:
+                WebDriverWait(self.driver, timeout=retry_delay, poll_frequency=1).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, self.NB_SELECTOR)
+                    )
+                )
+                logger.debug("Notebook loaded")
+                return
+            except TimeoutException:
+                logger.warning(
+                    f"Error waiting for notebook to load, retrying... {attempt + 1}/{max_retries}"
+                )
+                retry_delay *= 2  # Double the delay for the next attempt
+                retry_delay += random.uniform(0, 1)  # Add jitter
+        raise TimeoutException("Notebook did not load in time after multiple attempts.")
+
     async def close(self) -> None:
         """
         Close the Selenium driver.
         """
         self.driver.quit()
         logger.debug("Driver closed")
-
-
-class JupyterLabHelper:
-    """Helper class to interact with JupyterLab."""
-
-    def __init__(
-        self, url: str, token: str, kernel_name: str, nb_input_path: str
-    ) -> None:
-        self._url = url
-        self._token = token
-        self._kernel_name = kernel_name
-        self._nb_input_path = nb_input_path
-        self._headers = {
-            "Authorization": f"token {self._token}",
-            "Content-Type": "application/json",
-        }
-        self._notebook_url = (
-            f"{self._url}/lab/tree/{self._nb_input_path.split('/')[-1]}/"
-            f"?token={self._token}"
-        )
-
-    @property
-    def url(self) -> str:
-        return self._url
-
-    @property
-    def token(self) -> str:
-        return self._token
-
-    @property
-    def kernel_name(self) -> str:
-        return self._kernel_name
-
-    @property
-    def nb_input_path(self) -> str:
-        return self._nb_input_path
-
-    @property
-    def headers(self) -> dict:
-        return self._headers
-
-    @property
-    def notebook_url(self) -> str:
-        return self._notebook_url
-
-    async def clear_jupyterlab_sessions(self) -> None:
-        """
-        Clear all active sessions (notebooks, consoles, terminals) in the
-        JupyterLab instance.
-        Raises
-        ------
-        requests.exceptions.RequestException
-            If there is an error communicating with the JupyterLab server.
-        Exception
-            For any other unexpected errors.
-        """
-        try:
-            # Get a list of all running sessions
-            sessions_url = f"{self.url}/api/sessions"
-            response = requests.get(sessions_url, headers=self.headers)
-            response.raise_for_status()
-            sessions = response.json()
-
-            if not sessions:
-                logger.info("No active sessions found.")
-                return
-
-            logger.info(f"Found {len(sessions)} active sessions. Shutting them down...")
-
-            # Shut down each session
-            for session in sessions:
-                session_id = session["id"]
-                shutdown_url = f"{self.url}/api/sessions/{session_id}"
-                shutdown_response = requests.delete(shutdown_url, headers=self.headers)
-                shutdown_response.raise_for_status()
-
-                # Print a status message based on the session type
-                if "kernel" in session and session["kernel"]:
-                    logger.info(
-                        "Shut down notebook/console session: "
-                        f"{session['path']} (ID: {session_id})"
-                    )
-                elif "terminal" in session:
-                    logger.info(
-                        f"Shut down terminal session: {session['name']} "
-                        f"(ID: {session_id})"
-                    )
-                else:
-                    logger.info(f"Shut down unknown session type (ID: {session_id})")
-
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error communicating with JupyterLab server: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
-            raise e
-
-    async def restart_kernel(self) -> None:
-        """
-        Restart the kernel for a given kernel name.
-        Raises
-        ------
-        requests.exceptions.RequestException
-            If there is an error communicating with the JupyterLab server.
-        Exception
-            For any other unexpected errors.
-        """
-        try:
-            # Get the list of all kernels
-            kernels_url = f"{self.url}/api/kernels"
-            response = requests.get(kernels_url, headers=self.headers)
-            response.raise_for_status()
-            kernels = response.json()
-
-            # Find the kernel ID for the given kernel name
-            kernel_id = None
-            for kernel in kernels:
-                if kernel["name"] == self.kernel_name:
-                    kernel_id = kernel["id"]
-                    break
-
-            if not kernel_id:
-                logger.warning(
-                    f"No active kernel found for kernel name: {self.kernel_name}."
-                )
-                return
-
-            # Restart the kernel
-            restart_url = f"{self.url}/api/kernels/{kernel_id}/restart"
-            restart_response = requests.post(restart_url, headers=self.headers)
-            restart_response.raise_for_status()
-
-            logger.info(f"Kernel {self.kernel_name} restarted successfully.")
-
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error communicating with JupyterLab server: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
-            raise e
-
-    async def upload_notebook(self) -> None:
-        """
-        Upload the notebook to the JupyterLab instance.
-        Raises
-        ------
-        FileNotFoundError
-            If the notebook file does not exist.
-        requests.exceptions.RequestException
-            If there is an error communicating with the JupyterLab server.
-        Exception
-            For any other unexpected errors.
-        """
-        try:
-            notebook_path = self.nb_input_path.split("/")[
-                -1
-            ]  # Extract filename from path
-            upload_url = f"{self.url}/api/contents/{notebook_path}"
-            logger.info(f"Uploading notebook to {upload_url}")
-
-            with open(self.nb_input_path, "r", encoding="utf-8") as nb_file:
-                notebook_content = json.load(nb_file)
-
-            payload = {
-                "content": notebook_content,
-                "type": "notebook",
-                "format": "json",
-            }
-
-            response = requests.put(upload_url, headers=self.headers, json=payload)
-            response.raise_for_status()
-
-            logger.info(f"Notebook uploaded successfully to {upload_url}")
-
-        except FileNotFoundError as e:
-            logger.exception(f"Notebook file not found: {notebook_path}")
-            raise e
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error uploading notebook: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
-            raise e
-
-    async def delete_notebook(self) -> None:
-        """
-        Delete the notebook from the JupyterLab instance.
-        Raises
-        ------
-        requests.exceptions.RequestException
-            If there is an error communicating with the JupyterLab server.
-        Exception
-            For any other unexpected errors.
-        """
-        try:
-            notebook_path = self.nb_input_path.split("/")[
-                -1
-            ]  # Extract filename from path
-            delete_url = f"{self.url}/api/contents/{notebook_path}"
-            logger.info(f"Deleting notebook at {delete_url}")
-
-            response = requests.delete(delete_url, headers=self.headers)
-            response.raise_for_status()
-
-            logger.info(f"Notebook deleted successfully from {delete_url}")
-
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error deleting notebook: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
-            raise e
 
 
 async def profile_notebook(
