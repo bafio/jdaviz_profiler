@@ -30,8 +30,16 @@ class PerformanceMetrics:
 
     @staticmethod
     def dict_factory(data: list[tuple[str, Any]]) -> OrderedDict[str, Any]:
+        """
+        Custom dict factory to round float values to 2 decimal places and
+        exclude certain keys.
+        """
         return OrderedDict(
-            {k: v for (k, v) in data if k not in PerformanceMetrics.EXCLUDE_KEYS}
+            {
+                k: round(v, 2) if isinstance(v, float) else v
+                for (k, v) in data
+                if k not in PerformanceMetrics.EXCLUDE_KEYS
+            }
         )
 
     async def compute_metrics(self) -> None:
