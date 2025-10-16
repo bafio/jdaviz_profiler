@@ -1,60 +1,40 @@
 import json
 import logging
+from dataclasses import dataclass, field
+from typing import Any
 
 import requests
 from requests.exceptions import RequestException
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
-console_handler = logging.StreamHandler()
+console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 logger.addHandler(console_handler)
 
 
+@dataclass(eq=False)
 class JupyterLabHelper:
     """Helper class to interact with JupyterLab."""
 
-    def __init__(
-        self, url: str, token: str, kernel_name: str, nb_input_path: str
-    ) -> None:
-        self._url = url
-        self._token = token
-        self._kernel_name = kernel_name
-        self._nb_input_path = nb_input_path
-        self._headers = {
-            "Authorization": f"token {self._token}",
+    url: str
+    token: str
+    kernel_name: str
+    nb_input_path: str
+    headers: dict[str, str] = field(init=False)
+    notebook_url: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.headers = {
+            "Authorization": f"token {self.token}",
             "Content-Type": "application/json",
         }
-        self._notebook_url = (
-            f"{self._url}/lab/tree/{self._nb_input_path.split('/')[-1]}/"
-            f"?token={self._token}"
+        self.notebook_url = (
+            f"{self.url}/lab/tree/{self.nb_input_path.split('/')[-1]}/"
+            f"?token={self.token}"
         )
-
-    @property
-    def url(self) -> str:
-        return self._url
-
-    @property
-    def token(self) -> str:
-        return self._token
-
-    @property
-    def kernel_name(self) -> str:
-        return self._kernel_name
-
-    @property
-    def nb_input_path(self) -> str:
-        return self._nb_input_path
-
-    @property
-    def headers(self) -> dict:
-        return self._headers
-
-    @property
-    def notebook_url(self) -> str:
-        return self._notebook_url
 
     async def clear_jupyterlab_sessions(self) -> None:
         """
@@ -69,10 +49,12 @@ class JupyterLabHelper:
         """
         try:
             # Get a list of all running sessions
-            sessions_url = f"{self.url}/api/sessions"
-            response = requests.get(sessions_url, headers=self.headers)
+            sessions_url: str = f"{self.url}/api/sessions"
+            response: requests.Response = requests.get(
+                sessions_url, headers=self.headers
+            )
             response.raise_for_status()
-            sessions = response.json()
+            sessions: list[dict[str, Any]] = response.json()
 
             if not sessions:
                 logger.info("No active sessions found.")
@@ -82,9 +64,11 @@ class JupyterLabHelper:
 
             # Shut down each session
             for session in sessions:
-                session_id = session["id"]
-                shutdown_url = f"{self.url}/api/sessions/{session_id}"
-                shutdown_response = requests.delete(shutdown_url, headers=self.headers)
+                session_id: str = session["id"]
+                shutdown_url: str = f"{self.url}/api/sessions/{session_id}"
+                shutdown_response: requests.Response = requests.delete(
+                    shutdown_url, headers=self.headers
+                )
                 shutdown_response.raise_for_status()
 
                 # Print a status message based on the session type
@@ -120,13 +104,15 @@ class JupyterLabHelper:
         """
         try:
             # Get the list of all kernels
-            kernels_url = f"{self.url}/api/kernels"
-            response = requests.get(kernels_url, headers=self.headers)
+            kernels_url: str = f"{self.url}/api/kernels"
+            response: requests.Response = requests.get(
+                kernels_url, headers=self.headers
+            )
             response.raise_for_status()
-            kernels = response.json()
+            kernels: list[dict[str, Any]] = response.json()
 
             # Find the kernel ID for the given kernel name
-            kernel_id = None
+            kernel_id: str | None = None
             for kernel in kernels:
                 if kernel["name"] == self.kernel_name:
                     kernel_id = kernel["id"]
@@ -139,8 +125,10 @@ class JupyterLabHelper:
                 return
 
             # Restart the kernel
-            restart_url = f"{self.url}/api/kernels/{kernel_id}/restart"
-            restart_response = requests.post(restart_url, headers=self.headers)
+            restart_url: str = f"{self.url}/api/kernels/{kernel_id}/restart"
+            restart_response: requests.Response = requests.post(
+                restart_url, headers=self.headers
+            )
             restart_response.raise_for_status()
 
             logger.info(f"Kernel {self.kernel_name} restarted successfully.")
@@ -166,20 +154,22 @@ class JupyterLabHelper:
         """
         try:
             # Extract filename from path
-            notebook_path = self.nb_input_path.split("/")[-1]
-            upload_url = f"{self.url}/api/contents/{notebook_path}"
+            notebook_path: str = self.nb_input_path.split("/")[-1]
+            upload_url: str = f"{self.url}/api/contents/{notebook_path}"
             logger.info(f"Uploading notebook to {upload_url}")
 
             with open(self.nb_input_path, "r", encoding="utf-8") as nb_file:
-                notebook_content = json.load(nb_file)
+                notebook_content: dict[str, Any] = json.load(nb_file)
 
-            payload = {
+            payload: dict[str, Any] = {
                 "content": notebook_content,
                 "type": "notebook",
                 "format": "json",
             }
 
-            response = requests.put(upload_url, headers=self.headers, json=payload)
+            response: requests.Response = requests.put(
+                upload_url, headers=self.headers, json=payload
+            )
             response.raise_for_status()
 
             logger.info(f"Notebook uploaded successfully to {upload_url}")
@@ -206,11 +196,13 @@ class JupyterLabHelper:
         """
         try:
             # Extract filename from path
-            notebook_path = self.nb_input_path.split("/")[-1]
-            delete_url = f"{self.url}/api/contents/{notebook_path}"
+            notebook_path: str = self.nb_input_path.split("/")[-1]
+            delete_url: str = f"{self.url}/api/contents/{notebook_path}"
             logger.info(f"Deleting notebook at {delete_url}")
 
-            response = requests.delete(delete_url, headers=self.headers)
+            response: requests.Response = requests.delete(
+                delete_url, headers=self.headers
+            )
             response.raise_for_status()
 
             logger.info(f"Notebook deleted successfully from {delete_url}")

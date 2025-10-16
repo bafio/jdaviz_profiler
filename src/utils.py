@@ -1,19 +1,23 @@
 import ast
+import itertools
 import json
 import logging
 from collections import OrderedDict
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)  # Default level is INFO
-console_handler = logging.StreamHandler()
+console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
 logger.addHandler(console_handler)
 
+KILOBYTE: int = 1024
+MEGABYTE: int = 1024 * KILOBYTE
 
-def load_dict_from_json_file(file_path: str) -> dict:
+
+async def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
     """
     Load a dictionary of key-value pairs from a JSON file.
     Parameters
@@ -32,15 +36,15 @@ def load_dict_from_json_file(file_path: str) -> dict:
         If the JSON file is empty or improperly formatted.
     """
     with open(file_path, "r") as f:
-        data = json.loads(f.read())
+        data: dict = json.loads(f.read())
     if not data:
-        msg = f"No data found in {file_path}"
+        msg: str = f"No data found in {file_path}"
         logger.error(msg)
         raise ValueError(msg)
     return data
 
 
-def parse_assignments(src: str) -> OrderedDict[str, Any]:
+async def parse_assignments(src: str) -> OrderedDict[str, Any]:
     """
     Parse top-level variable assignments from Python source and return an OrderedDict
     of name->value.
@@ -61,25 +65,42 @@ def parse_assignments(src: str) -> OrderedDict[str, Any]:
     OrderedDict[str, Any]
         Ordered dictionary mapping variable names to their evaluated literal values.
     """
-    tree = ast.parse(src)
+    tree: ast.AST = ast.parse(src)
     result: OrderedDict[str, Any] = OrderedDict()
     for node in tree.body:
         if isinstance(node, ast.Assign):
             # e.g. a = 1 or a = (1,2)
             try:
-                value = ast.literal_eval(node.value)
+                value: Any = ast.literal_eval(node.value)
             except Exception:
                 continue
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    result[target.id] = value
+                    result[target.id]: Any = value
         elif isinstance(node, ast.AnnAssign):
             # e.g. a: int = 1
-            target = node.target
+            target: ast.Name | None = node.target
             if isinstance(target, ast.Name) and node.value is not None:
                 try:
-                    value = ast.literal_eval(node.value)
+                    value: Any = ast.literal_eval(node.value)
                 except Exception:
                     continue
-                result[target.id] = value
+                result[target.id]: Any = value
     return result
+
+
+async def dict_combinations(input_dict: dict) -> list[dict[str, Any]]:
+    """
+    Generate all combinations of values from a dictionary.
+    Parameters
+    ----------
+    input_dict : dict
+        Dictionary containing parameter names and their possible values.
+    Returns
+    -------
+    list of dict
+        List of dictionaries, each representing a unique combination of parameters.
+    """
+    keys: list[str] = input_dict.keys()
+    values: list[list[Any]] = input_dict.values()
+    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
