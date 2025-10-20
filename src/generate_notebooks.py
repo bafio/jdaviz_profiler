@@ -19,7 +19,7 @@ PARAMS_FILENAME: str = "params.json"
 OUTPUT_DIR_PATH: str = "notebooks"
 
 
-async def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
+def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.json, and
     save them to the "notebooks" directory.
@@ -64,10 +64,10 @@ async def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> li
         os.makedirs(output_dir_path)
 
     # Load parameters
-    params: dict[str, Any] = await load_dict_from_json_file(params_path)
+    params: dict[str, Any] = load_dict_from_json_file(params_path)
 
     # Generate all combinations of parameters
-    parameters_combinations: list[dict[str, Any]] = await dict_combinations(params)
+    parameters_combinations: list[dict[str, Any]] = dict_combinations(params)
 
     # Iterate over each combination of parameters and generate the notebooks
     logger.info("Generating profiler notebooks...")
@@ -90,7 +90,7 @@ async def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> li
             continue
 
         # Generate the notebook
-        await NotebookGenerator(
+        NotebookGenerator(
             template_path=template_path,
             output_path=output_path,
             parameters_values=parameters_values,

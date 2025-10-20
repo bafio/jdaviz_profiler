@@ -17,15 +17,17 @@ class PerformanceMetrics:
     """Class representing performance metrics."""
 
     total_execution_time: float = 0
-    average_cpu_usage: float = 0
-    average_memory_usage: float = 0
-    total_data_received: float = 0
-    average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
-    average_memory_usage_list: list[float] = field(default_factory=list, repr=False)
+    client_average_cpu_usage: float = 0
+    client_average_memory_usage: float = 0
+    client_total_data_received: float = 0
+    client_average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
+    client_average_memory_usage_list: list[float] = field(
+        default_factory=list, repr=False
+    )
 
     EXCLUDE_KEYS: ClassVar[tuple[str, ...]] = (
-        "average_cpu_usage_list",
-        "average_memory_usage_list",
+        "client_average_cpu_usage_list",
+        "client_average_memory_usage_list",
     )
 
     @staticmethod
@@ -42,23 +44,23 @@ class PerformanceMetrics:
             }
         )
 
-    async def compute_metrics(self) -> None:
+    def compute_metrics(self) -> None:
         """Compute the average CPU and memory usage from the recorded lists."""
-        if self.average_cpu_usage_list:
-            self.average_cpu_usage = sum(self.average_cpu_usage_list) / len(
-                self.average_cpu_usage_list
-            )
-        if self.average_memory_usage_list:
-            self.average_memory_usage = sum(self.average_memory_usage_list) / len(
-                self.average_memory_usage_list
-            )
+        if self.client_average_cpu_usage_list:
+            self.client_average_cpu_usage = sum(
+                self.client_average_cpu_usage_list
+            ) / len(self.client_average_cpu_usage_list)
+        if self.client_average_memory_usage_list:
+            self.client_average_memory_usage = sum(
+                self.client_average_memory_usage_list
+            ) / len(self.client_average_memory_usage_list)
 
     def __str__(self) -> str:
         return (
             f"Total Execution Time: {self.total_execution_time:.2f} seconds. "
-            f"Average CPU usage: {self.average_cpu_usage:.2f}%. "
-            f"Average Memory usage: {self.average_memory_usage:.2f}%. "
-            f"Total Data received: {self.total_data_received:.2f} MB."
+            f"Average CPU usage: {self.client_average_cpu_usage:.2f}%. "
+            f"Average Memory usage: {self.client_average_memory_usage:.2f}%. "
+            f"Total Data received: {self.client_total_data_received:.2f} MB."
         )
 
 

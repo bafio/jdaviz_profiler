@@ -19,7 +19,6 @@ $> python notebooks_generator.py --input_dir_path <usecase path>
 """
 
 import argparse
-import asyncio
 import logging
 
 from src.generate_notebooks import generate_notebooks
@@ -61,4 +60,4 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    asyncio.run(generate_notebooks(**vars(parser.parse_args())))
+    generate_notebooks(**vars(parser.parse_args()))

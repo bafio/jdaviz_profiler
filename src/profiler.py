@@ -1,4 +1,3 @@
-import asyncio
 import csv
 import json
 import logging
@@ -8,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from io import BytesIO
 from os.path import join as os_path_join
-from time import perf_counter_ns
+from time import perf_counter_ns, sleep
 from typing import Any, ClassVar
 
 from chromedriver_py import binary_path
@@ -103,13 +102,13 @@ class Profiler:
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR: ClassVar[str] = ".jdaviz.imviz"
 
-    async def setup(self) -> None:
+    def setup(self) -> None:
         """
         Set up the Selenium browser and page.
         """
         # Inspect the notebook file to find "skip_profiling" cells and
         # "network_bandwith" value
-        await self.inspect_notebook()
+        self.inspect_notebook()
 
         options: Options = Options()
         # Set window size option
@@ -132,7 +131,7 @@ class Profiler:
         self.driver.get(self.url)
 
         # Wait for the notebook to load
-        await self.wait_for_notebook_to_load()
+        self.wait_for_notebook_to_load()
 
         # If ui_network_throttling_value is not None, set up the network throttling
         if self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM) is not None:
@@ -157,17 +156,17 @@ class Profiler:
         )
         logger.debug("Page style added")
 
-    async def run(self) -> None:
+    def run(self) -> None:
         """
         Run the profiling process.
         """
         # Wait a bit to ensure the page is fully loaded
         sleep_time: float = 5
         logger.info(f"Sleeping {sleep_time} seconds to ensure full load...")
-        await asyncio.sleep(sleep_time)
+        sleep(sleep_time)
 
         # Collect cells to execute
-        await self.collect_executable_cells()
+        self.collect_executable_cells()
 
         # Start profiling
         logger.info("Starting profiling...")
@@ -175,37 +174,37 @@ class Profiler:
         sleep_time = 2
         # Execute each cell and wait for outputs
         for executable_cell in self.executable_cells:
-            await executable_cell.execute()
+            executable_cell.execute()
             # Wait a bit to ensure stability before moving to the next cell
             logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
-            await asyncio.sleep(sleep_time)
+            sleep(sleep_time)
 
             if not executable_cell.skip_profiling:
                 self.performance_metrics.total_execution_time += (
                     executable_cell.performance_metrics.total_execution_time
                 )
-                self.performance_metrics.average_cpu_usage_list.append(
-                    executable_cell.performance_metrics.average_cpu_usage
+                self.performance_metrics.client_average_cpu_usage_list.append(
+                    executable_cell.performance_metrics.client_average_cpu_usage
                 )
-                self.performance_metrics.average_memory_usage_list.append(
-                    executable_cell.performance_metrics.average_memory_usage
+                self.performance_metrics.client_average_memory_usage_list.append(
+                    executable_cell.performance_metrics.client_average_memory_usage
                 )
-                self.performance_metrics.total_data_received += (
-                    executable_cell.performance_metrics.total_data_received
+                self.performance_metrics.client_total_data_received += (
+                    executable_cell.performance_metrics.client_total_data_received
                 )
 
         # Compute performance metrics
-        await self.performance_metrics.compute_metrics()
+        self.performance_metrics.compute_metrics()
 
         # Log the performance metrics
         logger.info(str(self.performance_metrics))
 
         # save the profiling metrics to a csv file
-        await self.save_performance_metrics()
+        self.save_performance_metrics_to_csv()
 
         logger.info("Profiling completed.")
 
-    async def get_data_received(
+    def get_data_received(
         self, timestamp_start: datetime, timestamp_end: datetime
     ) -> float:
         """
@@ -232,7 +231,7 @@ class Profiler:
                     data_received += message.get("params", {}).get("dataLength", 0)
         return data_received / MEGABYTE  # in MB
 
-    async def detect_viz_element(self) -> None:
+    def detect_viz_element(self) -> None:
         """
         Detect the viz element based on the CSS classes given to the viz app.
         """
@@ -245,7 +244,7 @@ class Profiler:
             )
             logger.debug("Viz element detected and assigned")
 
-    async def save_performance_metrics(self) -> None:
+    def save_performance_metrics_to_csv(self) -> None:
         """
         Save the profiling metrics to a CSV file.
         """
@@ -256,13 +255,19 @@ class Profiler:
             file_path_name: str = os_path_join(
                 self.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
             )
-            first_columns: dict[str, str] = {"notebook_path": self.nb_input_path}
-            metrics_dict: dict[str, Any] = asdict(
-                self.performance_metrics,
-                dict_factory=NotebookPerformanceMetrics.dict_factory,
-            )
+            notebook_path: dict[str, str] = {"notebook_path": self.nb_input_path}
+            nb_params_dict: dict[str, Any] = {
+                f"{key}_param": value for key, value in self.nb_params_dict.items()
+            }
+            metrics_dict: dict[str, Any] = {
+                f"{key}_metric": value
+                for key, value in asdict(
+                    self.performance_metrics,
+                    dict_factory=NotebookPerformanceMetrics.dict_factory,
+                ).items()
+            }
             data: list[OrderedDict[str, Any]] = [
-                OrderedDict(**first_columns, **self.nb_params_dict, **metrics_dict)
+                OrderedDict(**notebook_path, **nb_params_dict, **metrics_dict)
             ]
             fieldnames: list[str] = list(data[0].keys())
             with open(file_path_name, "w", newline="") as csvfile:
@@ -275,7 +280,7 @@ class Profiler:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during metrics saving: {e}")
 
-    async def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
+    def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
         """
         Save screenshots of a cell to a determined directory path.
         Parameters
@@ -307,7 +312,7 @@ class Profiler:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during screenshots logging: {e}")
 
-    async def collect_executable_cells(self) -> list[ExecutableCell]:
+    def collect_executable_cells(self) -> list[ExecutableCell]:
         """
         Collect all code cells in the notebook and return them as a list of
         ExecutableCell instances.
@@ -335,20 +340,20 @@ class Profiler:
         )
         logger.info(f"Number of cells in the notebook: {len(self.executable_cells)}")
 
-    async def inspect_notebook(self) -> None:
+    def inspect_notebook(self) -> None:
         """
         Inspect the notebook file to find "skip_profiling" cells and
         "network_bandwith" value.
         """
         nb: NotebookNode = nb_read(self.nb_input_path, NO_CONVERT)
-        await self.collect_cells_metadata(nb)
-        await self.extract_nb_parameters_as_ordered_dict(nb)
+        self.collect_cells_metadata(nb)
+        self.extract_nb_parameters_as_ordered_dict(nb)
         self.performance_metrics.total_cells = len(nb.cells)
         self.performance_metrics.profiled_cells = (
             self.performance_metrics.total_cells - len(self.skip_profiling_cell_indexes)
         )
 
-    async def collect_cells_metadata(self, notebook: NotebookNode) -> None:
+    def collect_cells_metadata(self, notebook: NotebookNode) -> None:
         """
         Collect the indexes of cells marked with specific tags, such as:
         - SKIP_PROFILING_CELL_TAG
@@ -380,9 +385,7 @@ class Profiler:
             "viz changes (if viz is set)."
         )
 
-    async def extract_nb_parameters_as_ordered_dict(
-        self, notebook: NotebookNode
-    ) -> None:
+    def extract_nb_parameters_as_ordered_dict(self, notebook: NotebookNode) -> None:
         """
         Collect the notebook parameters from the cell tagged as parameters and
         store them as an ordered dictionary.
@@ -396,12 +399,12 @@ class Profiler:
             tags: list[str] = cell.metadata.get("tags", [])
             if self.PARAMETERS_CELL_TAG in tags:
                 cell_source: str = cell.source or ""
-                self.nb_params_dict = await parse_assignments(cell_source)
+                self.nb_params_dict = parse_assignments(cell_source)
                 logger.debug(f"Notebook parameters found: {self.nb_params_dict}")
                 return
         logger.debug("No notebook parameters found.")
 
-    async def wait_for_notebook_to_load(self) -> None:
+    def wait_for_notebook_to_load(self) -> None:
         """
         Wait for the notebook to load by checking for the presence of the notebook
         element in the DOM.
@@ -429,7 +432,7 @@ class Profiler:
                 retry_delay += random.uniform(0, 1)  # Add jitter
         raise TimeoutException("Notebook did not load in time after multiple attempts.")
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """
         Close the Selenium driver.
         """

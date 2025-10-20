@@ -36,7 +36,7 @@ class JupyterLabHelper:
             f"?token={self.token}"
         )
 
-    async def clear_jupyterlab_sessions(self) -> None:
+    def clear_jupyterlab_sessions(self) -> None:
         """
         Clear all active sessions (notebooks, consoles, terminals) in the
         JupyterLab instance.
@@ -92,7 +92,7 @@ class JupyterLabHelper:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
 
-    async def restart_kernel(self) -> None:
+    def restart_kernel(self) -> None:
         """
         Restart the kernel for a given kernel name.
         Raises
@@ -140,7 +140,7 @@ class JupyterLabHelper:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
 
-    async def upload_notebook(self) -> None:
+    def upload_notebook(self) -> None:
         """
         Upload the notebook to the JupyterLab instance.
         Raises
@@ -184,7 +184,7 @@ class JupyterLabHelper:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
 
-    async def delete_notebook(self) -> None:
+    def delete_notebook(self) -> None:
         """
         Delete the notebook from the JupyterLab instance.
         Raises

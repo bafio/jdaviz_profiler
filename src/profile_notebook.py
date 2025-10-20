@@ -16,7 +16,7 @@ console_handler.setFormatter(
 logger.addHandler(console_handler)
 
 
-async def profile_notebook(
+def profile_notebook(
     url: str,
     token: str,
     kernel_name: str,
@@ -78,9 +78,9 @@ async def profile_notebook(
         kernel_name=kernel_name,
         nb_input_path=nb_input_path,
     )
-    await jupyter_lab_helper.clear_jupyterlab_sessions()
-    await jupyter_lab_helper.restart_kernel()
-    await jupyter_lab_helper.upload_notebook()
+    jupyter_lab_helper.clear_jupyterlab_sessions()
+    jupyter_lab_helper.restart_kernel()
+    jupyter_lab_helper.upload_notebook()
 
     if screenshots_dir_path:
         # Create the directory(ies), if not yet created, in where the screenshots
@@ -111,9 +111,9 @@ async def profile_notebook(
         metrics_dir_path=metrics_dir_path,
     )
     try:
-        await profiler.setup()
-        await profiler.run()
+        profiler.setup()
+        profiler.run()
     finally:
-        await profiler.close()
+        profiler.close()
         # Clean up by deleting the uploaded notebook
-        await jupyter_lab_helper.delete_notebook()
+        jupyter_lab_helper.delete_notebook()

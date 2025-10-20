@@ -9,7 +9,6 @@ $> python generate_and_profile.py --input_dir_path <usecase path> \
 """
 
 import argparse
-import asyncio
 import logging
 
 from src.generate_and_profile import generate_and_profile
@@ -93,4 +92,4 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    asyncio.run(generate_and_profile(**vars(parser.parse_args())))
+    generate_and_profile(**vars(parser.parse_args()))

@@ -9,7 +9,6 @@ $> python profiler.py --url <JupyterLab URL> --token <API Token> \
 """
 
 import argparse
-import asyncio
 import logging
 
 from src.profile_notebook import profile_notebook
@@ -89,4 +88,4 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    asyncio.run(profile_notebook(**vars(parser.parse_args())))
+    profile_notebook(**vars(parser.parse_args()))

@@ -1,6 +1,6 @@
-import asyncio
 import logging
 from dataclasses import dataclass
+from time import sleep
 from typing import TYPE_CHECKING, ClassVar
 
 from selenium.webdriver.remote.webelement import WebElement
@@ -27,7 +27,7 @@ class VizElement:
     # Seconds to wait during the screenshots taking
     WAIT_TIME_DURING_SCREENSHOTS: ClassVar[float] = 0.5
 
-    async def is_stable(self, cell_index: int) -> bool:
+    def is_stable(self, cell_index: int) -> bool:
         """
         Check if the viz element is stable (i.e., not changing).
         Returns
@@ -43,15 +43,13 @@ class VizElement:
         screenshot_before: bytes = self.element.screenshot_as_png
 
         # Wait a short period before taking another screenshot
-        await asyncio.sleep(self.WAIT_TIME_DURING_SCREENSHOTS)
+        sleep(self.WAIT_TIME_DURING_SCREENSHOTS)
 
         # Take another screenshot of the viz element
         screenshot_after: bytes = self.element.screenshot_as_png
 
         # Log screenshots
-        await self.profiler.log_screenshots(
-            cell_index, [screenshot_before, screenshot_after]
-        )
+        self.profiler.log_screenshots(cell_index, [screenshot_before, screenshot_after])
 
         # Compare the two screenshots
         screenshots_are_the_same: bool = screenshot_before == screenshot_after

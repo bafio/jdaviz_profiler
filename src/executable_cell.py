@@ -1,10 +1,9 @@
-import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from os import linesep
-from time import time
+from time import sleep, time
 from typing import TYPE_CHECKING, ClassVar
 
 import psutil
@@ -60,7 +59,7 @@ class ExecutableCell:
     def __post_init__(self):
         self.performance_metrics.cell_index = self.index
 
-    async def look_for_done_statement(self) -> bool:
+    def look_for_done_statement(self) -> bool:
         """
         Look for the DONE statement in the output cells of the cell.
         Returns
@@ -92,27 +91,27 @@ class ExecutableCell:
                 return True
         return False
 
-    async def compute_performance_metrics(self) -> None:
+    def compute_performance_metrics(self) -> None:
         """
         Compute profiling metrics for the cell.
         """
         if self.skip_profiling:
             self.performance_metrics.total_execution_time = 0
-            self.performance_metrics.average_cpu_usage = 0
-            self.performance_metrics.average_memory_usage = 0
-            self.performance_metrics.total_data_received = 0
+            self.performance_metrics.client_average_cpu_usage = 0
+            self.performance_metrics.client_average_memory_usage = 0
+            self.performance_metrics.client_total_data_received = 0
             return
 
         timestamp_end: datetime = datetime.now()
         timestamp_start: datetime = timestamp_end - timedelta(
             seconds=self.performance_metrics.total_execution_time
         )
-        self.performance_metrics.total_data_received = (
-            await self.profiler.get_data_received(timestamp_start, timestamp_end)
+        self.performance_metrics.client_total_data_received = (
+            self.profiler.get_data_received(timestamp_start, timestamp_end)
         )
-        await self.performance_metrics.compute_metrics()
+        self.performance_metrics.compute_metrics()
 
-    async def execute(self) -> None:
+    def execute(self) -> None:
         """
         Execute the cell and collect profiling metrics.
         """
@@ -130,19 +129,19 @@ class ExecutableCell:
 
             while True:
                 # Capture CPU usage
-                self.performance_metrics.average_cpu_usage_list.append(
+                self.performance_metrics.client_average_cpu_usage_list.append(
                     psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
                 )
                 # Capture memory usage
-                self.performance_metrics.average_memory_usage_list.append(
+                self.performance_metrics.client_average_memory_usage_list.append(
                     psutil.virtual_memory().percent
                 )
 
                 # Wait a bit before checking again
-                await asyncio.sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+                sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
 
                 # Check if the DONE statement
-                done_found: bool = await self.look_for_done_statement()
+                done_found: bool = self.look_for_done_statement()
                 if not done_found:
                     logger.debug(f"Cell {self.index} DONE statement not found yet...")
                     continue
@@ -164,13 +163,11 @@ class ExecutableCell:
                     logger.debug(
                         "We already have the viz element, checking if it's stable..."
                     )
-                    viz_is_stable = await self.profiler.viz_element.is_stable(
-                        self.index
-                    )
+                    viz_is_stable = self.profiler.viz_element.is_stable(self.index)
                 else:
                     # Look for the viz element in the page
                     logger.debug("Looking for the viz element in the page...")
-                    await self.profiler.detect_viz_element()
+                    self.profiler.detect_viz_element()
 
                 if viz_is_stable:
                     logger.debug(
@@ -181,16 +178,16 @@ class ExecutableCell:
                     break
 
             # Capture CPU usage
-            self.performance_metrics.average_cpu_usage_list.append(
+            self.performance_metrics.client_average_cpu_usage_list.append(
                 psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
             )
             # Capture memory usage
-            self.performance_metrics.average_memory_usage_list.append(
+            self.performance_metrics.client_average_memory_usage_list.append(
                 psutil.virtual_memory().percent
             )
 
             # Compute performance metrics
-            await self.compute_performance_metrics()
+            self.compute_performance_metrics()
 
             # Log the performance metrics
             logger.info(str(self.performance_metrics))

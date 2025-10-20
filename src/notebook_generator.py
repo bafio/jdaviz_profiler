@@ -47,7 +47,7 @@ class NotebookGenerator:
         """
         self.notebook = nb_read(self.template_path, NO_CONVERT)
 
-    async def clear_notebook_outputs(self) -> None:
+    def clear_notebook_outputs(self) -> None:
         """
         Clear the outputs of all cells in a notebook.
         """
@@ -56,7 +56,7 @@ class NotebookGenerator:
                 cell.outputs: list[NotebookNode] = []
                 cell.execution_count: int | None = None
 
-    async def inject_key_value_data(self) -> None:
+    def inject_key_value_data(self) -> None:
         """
         Inject key-value data in the cell tagged as parameters in the notebook.
         Raises
@@ -89,7 +89,7 @@ class NotebookGenerator:
             logger.error(msg)
             raise ValueError(msg)
 
-    async def inject_done_statement(self) -> None:
+    def inject_done_statement(self) -> None:
         """
         Inject a `print("DONE")` statement at the end of code cells in the notebook.
         """
@@ -104,12 +104,12 @@ class NotebookGenerator:
                 lines.append(self.DONE_STATEMENT)
             cell.source = linesep.join(lines)
 
-    async def generate(self):
+    def generate(self):
         """
         Generate the notebook by injecting parameters and clearing outputs.
         """
-        await self.clear_notebook_outputs()
-        await self.inject_key_value_data()
-        await self.inject_done_statement()
+        self.clear_notebook_outputs()
+        self.inject_key_value_data()
+        self.inject_done_statement()
         # Write the modified notebook to the output path
         nb_write(self.notebook, self.output_path)

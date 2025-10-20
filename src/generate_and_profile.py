@@ -13,7 +13,7 @@ console_handler.setFormatter(
 logger.addHandler(console_handler)
 
 
-async def generate_and_profile(
+def generate_and_profile(
     input_dir_path: str,
     url: str,
     token: str,
@@ -58,7 +58,7 @@ async def generate_and_profile(
         f"Log Level: {log_level}"
     )
 
-    nb_input_paths: list[str] = await generate_notebooks(
+    nb_input_paths: list[str] = generate_notebooks(
         input_dir_path=input_dir_path, log_level=log_level
     )
     screenshots_dir_path: str | None = (
@@ -71,7 +71,7 @@ async def generate_and_profile(
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
 
-        await profile_notebook(
+        profile_notebook(
             url=url,
             token=token,
             kernel_name=kernel_name,

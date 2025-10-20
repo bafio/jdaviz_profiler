@@ -17,7 +17,7 @@ KILOBYTE: int = 1024
 MEGABYTE: int = 1024 * KILOBYTE
 
 
-async def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
+def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
     """
     Load a dictionary of key-value pairs from a JSON file.
     Parameters
@@ -44,7 +44,7 @@ async def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
     return data
 
 
-async def parse_assignments(src: str) -> OrderedDict[str, Any]:
+def parse_assignments(src: str) -> OrderedDict[str, Any]:
     """
     Parse top-level variable assignments from Python source and return an OrderedDict
     of name->value.
@@ -89,7 +89,7 @@ async def parse_assignments(src: str) -> OrderedDict[str, Any]:
     return result
 
 
-async def dict_combinations(input_dict: dict) -> list[dict[str, Any]]:
+def dict_combinations(input_dict: dict) -> list[dict[str, Any]]:
     """
     Generate all combinations of values from a dictionary.
     Parameters
