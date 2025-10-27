@@ -3,7 +3,6 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from os import linesep
-from time import sleep, time
 from typing import TYPE_CHECKING, ClassVar
 
 import psutil
@@ -11,13 +10,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 
-from src.performance_metrics import CellPerformanceMetrics
+from src.performance_metrics import CellExecutionStatus, CellPerformanceMetrics
+from src.utils import elapsed_time, explicit_wait
 
+# Avoid circular import
 if TYPE_CHECKING:
-    from src.profiler import Profiler  # Avoid circular import
+    from src.profiler import Profiler
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -31,6 +33,7 @@ class ExecutableCell:
 
     cell: WebElement
     index: int
+    max_wait_time: int
     skip_profiling: bool
     wait_for_viz: bool
     profiler: "Profiler"
@@ -58,6 +61,134 @@ class ExecutableCell:
 
     def __post_init__(self):
         self.performance_metrics.cell_index = self.index
+
+    def execute(self) -> None:
+        """
+        Execute the cell and collect profiling metrics.
+        """
+        try:
+            logger.info(f"Executing cell {self.index}")
+
+            # Initialize variables to track the viz element and elapsed time
+            viz_is_stable: bool = False
+            done_found: bool = False
+            start_time: float = elapsed_time()
+            kernel_pid = self.profiler.get_current_kernel_pid()
+
+            # Click on the cell
+            self.cell.click()
+            # Execute the cell
+            self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
+
+            self.performance_metrics.execution_status = CellExecutionStatus.IN_PROGRESS
+
+            first_iteration = True
+            while True:
+                not first_iteration and self.capture_metrics()
+                first_iteration = False
+
+                # Check for timeout
+                if elapsed_time(start_time) > self.max_wait_time:
+                    self.performance_metrics.execution_status = (
+                        CellExecutionStatus.TIMED_OUT
+                    )
+                    logger.warning(
+                        f"Cell {self.index} execution timed out after "
+                        f"{self.max_wait_time} seconds"
+                    )
+                    break
+
+                if kernel_pid != self.profiler.get_current_kernel_pid():
+                    self.performance_metrics.execution_status = (
+                        CellExecutionStatus.FAILED
+                    )
+                    logger.warning(
+                        f"Cell {self.index} execution has been interrupted due to a"
+                        "kernel restart."
+                    )
+                    break
+
+                # Wait a bit before checking again
+                explicit_wait(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+
+                # Check if the DONE statement is present in the cell result,
+                # only if not yet encountered
+                done_found = done_found or self.look_for_done_statement()
+                if not done_found:
+                    logger.debug(f"Cell {self.index} DONE statement not found yet...")
+                    continue
+
+                logger.debug(f"Cell {self.index} DONE statement found, moving on...")
+
+                if not self.wait_for_viz:
+                    logger.debug(
+                        f"Cell {self.index} is not tagged as to wait for viz changes, "
+                        "moving on..."
+                    )
+                    self.performance_metrics.execution_status = (
+                        CellExecutionStatus.COMPLETED
+                    )
+                    break
+
+                logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
+                if self.profiler.viz_element:
+                    # If we have the viz element, check if it's stable
+                    logger.debug(
+                        "We already have the viz element, checking if it's stable..."
+                    )
+                    viz_is_stable = self.profiler.viz_element.is_stable(self.index)
+                else:
+                    # Look for the viz element in the page
+                    logger.debug("Looking for the viz element in the page...")
+                    self.profiler.detect_viz_element()
+
+                if viz_is_stable:
+                    logger.debug(
+                        f"Cell {self.index} viz element is stable, moving on..."
+                    )
+                    self.performance_metrics.execution_status = (
+                        CellExecutionStatus.COMPLETED
+                    )
+                    break
+
+            self.capture_metrics()
+
+            # Compute performance metrics
+            self.compute_performance_metrics()
+
+            # Log the performance metrics
+            logger.info(str(self.performance_metrics))
+
+        except Exception as e:
+            logger.exception(
+                f"An error occurred while executing cell {self.index}: {e}"
+            )
+
+    def capture_metrics(self, start_time: float) -> None:
+        # Save time elapsed
+        self.performance_metrics.total_execution_time = elapsed_time(start_time)
+
+        # Capture client CPU usage
+        self.performance_metrics.client_average_cpu_usage_list.append(
+            psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+        )
+        # Capture client memory usage
+        self.performance_metrics.client_average_memory_usage_list.append(
+            psutil.virtual_memory().percent
+        )
+
+        # Get kernel usage metrics
+        kernel_usage = self.profiler.get_kernel_usage()
+
+        # Capture kernel CPU usage
+        self.performance_metrics.kernel_average_cpu_usage_list.append(
+            kernel_usage.get("kernel_cpu", 0)
+        )
+
+        # Capture kernel memory usage
+        self.performance_metrics.kernel_average_memory_usage_list.append(
+            kernel_usage.get("host_virtual_memory", {}).get("percent", 0)
+        )
 
     def look_for_done_statement(self) -> bool:
         """
@@ -97,9 +228,11 @@ class ExecutableCell:
         """
         if self.skip_profiling:
             self.performance_metrics.total_execution_time = 0
+            self.performance_metrics.client_total_data_received = 0
             self.performance_metrics.client_average_cpu_usage = 0
             self.performance_metrics.client_average_memory_usage = 0
-            self.performance_metrics.client_total_data_received = 0
+            self.performance_metrics.kernel_average_cpu_usage = 0
+            self.performance_metrics.kernel_average_memory_usage = 0
             return
 
         timestamp_end: datetime = datetime.now()
@@ -107,92 +240,6 @@ class ExecutableCell:
             seconds=self.performance_metrics.total_execution_time
         )
         self.performance_metrics.client_total_data_received = (
-            self.profiler.get_data_received(timestamp_start, timestamp_end)
+            self.profiler.get_client_data_received(timestamp_start, timestamp_end)
         )
         self.performance_metrics.compute_metrics()
-
-    def execute(self) -> None:
-        """
-        Execute the cell and collect profiling metrics.
-        """
-        try:
-            logger.info(f"Executing cell {self.index}")
-
-            # Initialize variables to track the viz element and elapsed time
-            viz_is_stable: bool = False
-            start_time: float = time()
-
-            # Click on the cell
-            self.cell.click()
-            # Execute the cell
-            self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
-
-            while True:
-                # Capture CPU usage
-                self.performance_metrics.client_average_cpu_usage_list.append(
-                    psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-                )
-                # Capture memory usage
-                self.performance_metrics.client_average_memory_usage_list.append(
-                    psutil.virtual_memory().percent
-                )
-
-                # Wait a bit before checking again
-                sleep(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-
-                # Check if the DONE statement
-                done_found: bool = self.look_for_done_statement()
-                if not done_found:
-                    logger.debug(f"Cell {self.index} DONE statement not found yet...")
-                    continue
-
-                logger.debug(f"Cell {self.index} DONE statement found, moving on...")
-
-                if not self.wait_for_viz:
-                    logger.debug(
-                        f"Cell {self.index} is not tagged as to wait for viz changes, "
-                        "moving on..."
-                    )
-                    # Save time elapsed
-                    self.performance_metrics.total_execution_time = time() - start_time
-                    break
-
-                logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
-                if self.profiler.viz_element:
-                    # If we have the viz element, check if it's stable
-                    logger.debug(
-                        "We already have the viz element, checking if it's stable..."
-                    )
-                    viz_is_stable = self.profiler.viz_element.is_stable(self.index)
-                else:
-                    # Look for the viz element in the page
-                    logger.debug("Looking for the viz element in the page...")
-                    self.profiler.detect_viz_element()
-
-                if viz_is_stable:
-                    logger.debug(
-                        f"Cell {self.index} viz element is stable, moving on..."
-                    )
-                    # Save time elapsed
-                    self.performance_metrics.total_execution_time = time() - start_time
-                    break
-
-            # Capture CPU usage
-            self.performance_metrics.client_average_cpu_usage_list.append(
-                psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-            )
-            # Capture memory usage
-            self.performance_metrics.client_average_memory_usage_list.append(
-                psutil.virtual_memory().percent
-            )
-
-            # Compute performance metrics
-            self.compute_performance_metrics()
-
-            # Log the performance metrics
-            logger.info(str(self.performance_metrics))
-
-        except Exception as e:
-            logger.exception(
-                f"An error occurred while executing cell {self.index}: {e}"
-            )

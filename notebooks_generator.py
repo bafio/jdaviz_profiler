@@ -24,7 +24,8 @@ import logging
 from src.generate_notebooks import generate_notebooks
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")

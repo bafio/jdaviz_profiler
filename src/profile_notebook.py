@@ -4,11 +4,12 @@ from os.path import basename, splitext
 from os.path import join as os_path_join
 from time import gmtime, strftime
 
-from src.jupyter_lab_helper import JupyterLabHelper
+from src.jupyterlab_helper import JupyterLabHelper
 from src.profiler import Profiler
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -22,6 +23,7 @@ def profile_notebook(
     kernel_name: str,
     nb_input_path: str,
     headless: bool,
+    max_wait_time: int,
     screenshots_dir_path: str | None = None,
     metrics_dir_path: str | None = None,
     log_level: str = "INFO",
@@ -37,9 +39,11 @@ def profile_notebook(
     kernel_name : str
         The name of the kernel to use for the notebook.
     nb_input_path : str
-        Path to the input notebook to be profiled.
+        Path of the input notebook to be profiled.
     headless : bool
         Whether to run in headless mode.
+    max_wait_time : int
+        Max time to wait after executing each cell (in minutes).
     screenshots_dir_path : str, optional
         Path to the directory to where screenshots will be stored, if not passed as
         an argument, screenshots will not be logged.
@@ -66,21 +70,11 @@ def profile_notebook(
         f"Kernel Name: {kernel_name} -- "
         f"Input Notebook Path: {nb_input_path} -- "
         f"Headless: {headless} -- "
+        f"Max Wait Time: {max_wait_time} -- "
         f"Screenshots Dir Path: {screenshots_dir_path} -- "
         f"Metrics Dir Path: {metrics_dir_path} -- "
         f"Log Level: {log_level}"
     )
-
-    # Initialize JupyterLab helper and clear any existing sessions
-    jupyter_lab_helper: JupyterLabHelper = JupyterLabHelper(
-        url=url,
-        token=token,
-        kernel_name=kernel_name,
-        nb_input_path=nb_input_path,
-    )
-    jupyter_lab_helper.clear_jupyterlab_sessions()
-    jupyter_lab_helper.restart_kernel()
-    jupyter_lab_helper.upload_notebook()
 
     if screenshots_dir_path:
         # Create the directory(ies), if not yet created, in where the screenshots
@@ -102,18 +96,27 @@ def profile_notebook(
         )
         makedirs(metrics_dir_path, exist_ok=True)
 
+    # Initialize JupyterLab helper and clear any existing sessions
+    jupyterlab_helper: JupyterLabHelper = JupyterLabHelper(url=url, token=token)
+    jupyterlab_helper.clear_all_jupyterlab_sessions()
+    jupyterlab_helper.restart_kernel(kernel_name)
+    jupyterlab_helper.upload_notebook(nb_input_path)
+
     # Start Selenium and run the profiler
-    profiler: Profiler = Profiler(
-        url=jupyter_lab_helper.notebook_url,
-        headless=headless,
-        nb_input_path=nb_input_path,
-        screenshots_dir_path=screenshots_dir_path,
-        metrics_dir_path=metrics_dir_path,
-    )
     try:
-        profiler.setup()
-        profiler.run()
+        profiler: Profiler = Profiler(
+            kernel_name=kernel_name,
+            nb_input_path=nb_input_path,
+            headless=headless,
+            # Convert minutes to seconds
+            max_wait_time=max_wait_time * 60,
+            screenshots_dir_path=screenshots_dir_path,
+            metrics_dir_path=metrics_dir_path,
+            jupyterlab_helper=jupyterlab_helper,
+        )
+        profiler.run_notebook()
     finally:
         profiler.close()
         # Clean up by deleting the uploaded notebook
-        jupyter_lab_helper.delete_notebook()
+        notebook_filename = jupyterlab_helper.get_notebook_filename(nb_input_path)
+        jupyterlab_helper.delete_notebook(notebook_filename)

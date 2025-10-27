@@ -5,9 +5,10 @@ import random
 from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from functools import cached_property
 from io import BytesIO
 from os.path import join as os_path_join
-from time import perf_counter_ns, sleep
+from time import perf_counter_ns
 from typing import Any, ClassVar
 
 from chromedriver_py import binary_path
@@ -25,12 +26,19 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.executable_cell import ExecutableCell
-from src.performance_metrics import NotebookPerformanceMetrics
-from src.utils import MEGABYTE, parse_assignments
+from src.jupyterlab_helper import JupyterLabHelper
+from src.performance_metrics import CellExecutionStatus, NotebookPerformanceMetrics
+from src.utils import (
+    MEGABYTE,
+    explicit_wait,
+    get_notebook_cell_indexes_for_tag,
+    get_notebook_parameters,
+)
 from src.viz_element import VizElement
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -42,11 +50,13 @@ logger.addHandler(console_handler)
 class Profiler:
     """Class to profile a Jupyter notebook using Selenium."""
 
-    url: str
-    headless: bool
+    kernel_name: str
     nb_input_path: str
-    screenshots_dir_path: str | None = field(default=None, repr=True)
-    metrics_dir_path: str | None = field(default=None, repr=True)
+    headless: bool
+    max_wait_time: int
+    screenshots_dir_path: str | None
+    metrics_dir_path: str | None
+    jupyterlab_helper: JupyterLabHelper
     driver: WebDriver | None = field(default=None, repr=False)
     viz_element: WebElement | None = field(default=None, repr=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
@@ -66,7 +76,7 @@ class Profiler:
 
     # The width and height to set for the browser viewport to make the page really tall
     # to avoid scrollbars and scrolling issues
-    VIEWPORT_SIZE: ClassVar[dict[str, int]] = {"width": 1600, "height": 20000}
+    VIEWPORT_SIZE: ClassVar[dict[str, int]] = {"width": 10000, "height": 20000}
 
     # Window size options
     WINDOW_SIZE_OPTION: ClassVar[str] = (
@@ -102,14 +112,54 @@ class Profiler:
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR: ClassVar[str] = ".jdaviz.imviz"
 
-    def setup(self) -> None:
+    @cached_property
+    def kernel_id(self) -> str:
+        return self.jupyterlab_helper.get_kernel_id_from_name(self.kernel_name)
+
+    def run_notebook(self) -> None:
+        self.setup_profiler()
+
+        self.setup_web_driver()
+
+        self.go_to_notebook_url()
+
+        self.setup_network_throttling()
+
+        self.apply_custom_settings_to_ui()
+
+        # Wait a bit to ensure the page is fully loaded
+        explicit_wait(5)
+
+        self.build_executable_cells_from_ui()
+
+        self.execute_notebook_cells()
+
+        # Compute performance metrics
+        self.performance_metrics.compute_metrics()
+
+        # Log the performance metrics
+        logger.info(str(self.performance_metrics))
+
+        # save the performance metrics to a csv file
+        self.save_performance_metrics_to_csv()
+
+        logger.info("Profiling completed.")
+
+    def setup_profiler(self) -> None:
+        nb: NotebookNode = nb_read(self.nb_input_path, NO_CONVERT)
+        self.skip_profiling_cell_indexes = frozenset(
+            get_notebook_cell_indexes_for_tag(nb, self.SKIP_PROFILING_CELL_TAG)
+        )
+        self.wait_for_viz_cell_indexes = frozenset(
+            get_notebook_cell_indexes_for_tag(nb, self.WAIT_FOR_VIZ_CELL_TAG)
+        )
+        self.nb_params_dict = get_notebook_parameters(nb, self.PARAMETERS_CELL_TAG)
+        self.performance_metrics.total_cells = len(nb.cells)
+
+    def setup_web_driver(self) -> None:
         """
         Set up the Selenium browser and page.
         """
-        # Inspect the notebook file to find "skip_profiling" cells and
-        # "network_bandwith" value
-        self.inspect_notebook()
-
         options: Options = Options()
         # Set window size option
         options.add_argument(self.WINDOW_SIZE_OPTION)
@@ -126,27 +176,38 @@ class Profiler:
             service=ChromeService(executable_path=binary_path),
         )
 
+    def go_to_notebook_url(self) -> None:
         # Navigate to the notebook URL
-        logger.info(f"Navigating to {self.url}")
-        self.driver.get(self.url)
+        url: str = self.jupyterlab_helper.get_notebook_url(self.nb_input_path)
+        logger.info(f"Navigating to {url}")
+        self.driver.get(url)
 
         # Wait for the notebook to load
         self.wait_for_notebook_to_load()
 
-        # If ui_network_throttling_value is not None, set up the network throttling
-        if self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM) is not None:
-            self.driver.set_network_conditions(
-                offline=False,
-                latency=0,
-                download_throughput=self.nb_params_dict[
-                    self.UI_NETWORK_THROTTLING_PARAM
-                ],
-                upload_throughput=-1,  # -1 means no throttling
+    def setup_network_throttling(self) -> None:
+        if not self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM):
+            logger.debug(
+                "No network throttling parameter found, hence no network throttling applied"
             )
+            return
+        # If ui_network_throttling_value is not None, set up the network throttling
+        download_throughput: int = self.nb_params_dict[self.UI_NETWORK_THROTTLING_PARAM]
+        self.driver.set_network_conditions(
+            offline=False,
+            latency=0,
+            download_throughput=download_throughput,
+            # -1 means no throttling
+            upload_throughput=-1,
+        )
+        logger.debug(
+            f"Network throttling download_throughput={download_throughput} applied."
+        )
 
+    def apply_custom_settings_to_ui(self) -> None:
         # Apply custom viewport size
         self.driver.set_window_size(*self.VIEWPORT_SIZE.values())
-        logger.debug("Page viewport set")
+        logger.debug(f"Page viewport set to {self.VIEWPORT_SIZE}.")
 
         # Apply custom CSS styles
         self.driver.execute_script(
@@ -154,95 +215,68 @@ class Profiler:
             f"style.innerHTML = `{self.PAGE_STYLE_TAG_CONTENT}`; "
             "document.head.appendChild(style);"
         )
-        logger.debug("Page style added")
+        logger.debug("Page style added.")
 
-    def run(self) -> None:
+    def build_executable_cells_from_ui(self) -> None:
         """
-        Run the profiling process.
+        Collect all code cells in the notebook from the loaded ui and return them
+        as a list of ExecutableCell instances.
         """
-        # Wait a bit to ensure the page is fully loaded
-        sleep_time: float = 5
-        logger.info(f"Sleeping {sleep_time} seconds to ensure full load...")
-        sleep(sleep_time)
-
-        # Collect cells to execute
-        self.collect_executable_cells()
-
-        # Start profiling
-        logger.info("Starting profiling...")
-
-        sleep_time = 2
-        # Execute each cell and wait for outputs
-        for executable_cell in self.executable_cells:
-            executable_cell.execute()
-            # Wait a bit to ensure stability before moving to the next cell
-            logger.info(f"Sleeping {sleep_time} seconds to ensure stability...")
-            sleep(sleep_time)
-
-            if not executable_cell.skip_profiling:
-                self.performance_metrics.total_execution_time += (
-                    executable_cell.performance_metrics.total_execution_time
-                )
-                self.performance_metrics.client_average_cpu_usage_list.append(
-                    executable_cell.performance_metrics.client_average_cpu_usage
-                )
-                self.performance_metrics.client_average_memory_usage_list.append(
-                    executable_cell.performance_metrics.client_average_memory_usage
-                )
-                self.performance_metrics.client_total_data_received += (
-                    executable_cell.performance_metrics.client_total_data_received
-                )
-
-        # Compute performance metrics
-        self.performance_metrics.compute_metrics()
-
-        # Log the performance metrics
-        logger.info(str(self.performance_metrics))
-
-        # save the profiling metrics to a csv file
-        self.save_performance_metrics_to_csv()
-
-        logger.info("Profiling completed.")
-
-    def get_data_received(
-        self, timestamp_start: datetime, timestamp_end: datetime
-    ) -> float:
-        """
-        Get the total data received between two timestamps from the performance logs.
-        Parameters
-        ----------
-        timestamp_start : datetime
-            The start timestamp.
-        timestamp_end : datetime
-            The end timestamp.
-        Returns
-        -------
-        float
-            The total data received in MB.
-        """
-        data_received: float = 0
-        for entry in self.driver.get_log("performance"):
-            timestamp_entry = datetime.fromtimestamp(entry["timestamp"] / 1000)
-            if timestamp_start < timestamp_entry < timestamp_end:
-                message: dict[str, Any] = json.loads(entry.get("message", {})).get(
-                    "message", {}
-                )
-                if message.get("method", "") == "Network.dataReceived":
-                    data_received += message.get("params", {}).get("dataLength", 0)
-        return data_received / MEGABYTE  # in MB
-
-    def detect_viz_element(self) -> None:
-        """
-        Detect the viz element based on the CSS classes given to the viz app.
-        """
-        viz_element: WebElement = self.driver.find_element(
-            By.CSS_SELECTOR, self.VIZ_ELEMENT_SELECTOR
+        # Collect all code cells in the notebook
+        nb_ui_cells: list[WebElement] = self.driver.find_elements(
+            By.CSS_SELECTOR, self.NB_CELLS_SELECTOR
         )
-        if viz_element:
-            self.viz_element: VizElement = VizElement(
-                element=viz_element, profiler=self
+
+        assert len(nb_ui_cells) == len(self.performance_metrics.total_cells)
+
+        self.executable_cells = tuple(
+            ExecutableCell(
+                cell=nb_ui_cell,
+                index=i,
+                max_wait_time=self.max_wait_time,
+                skip_profiling=i in self.skip_profiling_cell_indexes,
+                wait_for_viz=i in self.wait_for_viz_cell_indexes,
+                profiler=self,
             )
-            logger.debug("Viz element detected and assigned")
+            for i, nb_ui_cell in enumerate(nb_ui_cells, 1)
+        )
+        logger.info(
+            f"Number of executable cells in the notebook: {len(self.executable_cells)}"
+        )
+
+    def execute_notebook_cells(self) -> None:
+        # Start profiling
+        logger.info("Execute notebook cells.")
+
+        # Execute each cell and wait for outputs
+        for ec in self.executable_cells:
+            ec.execute()
+            logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")
+            self.collect_executable_cell_metrics(ec)
+
+            if ec.performance_metrics.execution_status != CellExecutionStatus.COMPLETED:
+                break
+
+            # Wait a bit to ensure stability before moving to the next cell
+            explicit_wait(2)
+
+    def collect_executable_cell_metrics(self, executable_cell: ExecutableCell) -> None:
+        self.performance_metrics.executed_cells += 1
+        if executable_cell.skip_profiling:
+            return
+        self.performance_metrics.profiled_cells += 1
+        self.performance_metrics.total_execution_time += (
+            executable_cell.performance_metrics.total_execution_time
+        )
+        self.performance_metrics.client_average_cpu_usage_list.append(
+            executable_cell.performance_metrics.client_average_cpu_usage
+        )
+        self.performance_metrics.client_average_memory_usage_list.append(
+            executable_cell.performance_metrics.client_average_memory_usage
+        )
+        self.performance_metrics.client_total_data_received += (
+            executable_cell.performance_metrics.client_total_data_received
+        )
 
     def save_performance_metrics_to_csv(self) -> None:
         """
@@ -280,6 +314,85 @@ class Profiler:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during metrics saving: {e}")
 
+    def wait_for_notebook_to_load(self) -> None:
+        """
+        Wait for the notebook to load by checking for the presence of the notebook
+        element in the DOM.
+        Retries a few times with exponential backoff in case of failure.
+        """
+        max_retries: int = 5
+        # Initial delay in seconds with jitter
+        retry_delay: float = 10 + random.uniform(0, 1)
+        for attempt in range(max_retries):
+            try:
+                WebDriverWait(self.driver, timeout=retry_delay, poll_frequency=1).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, self.NB_SELECTOR)
+                    )
+                )
+                logger.debug("Notebook loaded")
+                return
+            except TimeoutException:
+                logger.warning(
+                    "Error waiting for notebook to load, "
+                    f"retrying... {attempt + 1}/{max_retries}"
+                )
+                # Double the delay for the next attempt
+                retry_delay *= 2
+                # Add jitter
+                retry_delay += random.uniform(0, 1)
+        raise TimeoutException("Notebook did not load in time after multiple attempts.")
+
+    def close(self) -> None:
+        """
+        Close the Selenium driver.
+        """
+        self.driver is not None and hasattr(self.driver, "quit") and self.driver.quit()
+        logger.debug("Driver closed")
+
+    def get_client_data_received(
+        self, timestamp_start: datetime, timestamp_end: datetime
+    ) -> float:
+        """
+        Get the total data received between two timestamps from the
+        client performance logs.
+        Parameters
+        ----------
+        timestamp_start : datetime
+            The start timestamp.
+        timestamp_end : datetime
+            The end timestamp.
+        Returns
+        -------
+        float
+            The total data received in MB.
+        """
+        data_received: float = 0
+        for entry in self.driver.get_log("performance"):
+            timestamp_entry: datetime = datetime.fromtimestamp(
+                entry["timestamp"] / 1000
+            )
+            if timestamp_start < timestamp_entry < timestamp_end:
+                message: dict[str, Any] = json.loads(entry.get("message", {})).get(
+                    "message", {}
+                )
+                if message.get("method", "") == "Network.dataReceived":
+                    data_received += message.get("params", {}).get("dataLength", 0)
+        return data_received / MEGABYTE
+
+    def detect_viz_element(self) -> None:
+        """
+        Detect the viz element based on the CSS classes given to the viz app.
+        """
+        viz_element: WebElement = self.driver.find_element(
+            By.CSS_SELECTOR, self.VIZ_ELEMENT_SELECTOR
+        )
+        if viz_element:
+            self.viz_element: VizElement = VizElement(
+                element=viz_element, profiler=self
+            )
+            logger.debug("Viz element detected and assigned")
+
     def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
         """
         Save screenshots of a cell to a determined directory path.
@@ -312,129 +425,8 @@ class Profiler:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during screenshots logging: {e}")
 
-    def collect_executable_cells(self) -> list[ExecutableCell]:
-        """
-        Collect all code cells in the notebook and return them as a list of
-        ExecutableCell instances.
-        Returns
-        -------
-        list[ExecutableCell]
-            List of ExecutableCell instances representing the code cells
-            in the notebook.
-        """
-        # Collect all code cells in the notebook
-        nb_cells: list[WebElement] = self.driver.find_elements(
-            By.CSS_SELECTOR, self.NB_CELLS_SELECTOR
-        )
+    def get_current_kernel_pid(self) -> int:
+        return self.jupyterlab_helper.get_current_kernel_pid(self.kernel_id)
 
-        # Store cells in an ordered dictionary with their index
-        self.executable_cells = tuple(
-            ExecutableCell(
-                cell=cell,
-                index=i,
-                skip_profiling=i in self.skip_profiling_cell_indexes,
-                wait_for_viz=i in self.wait_for_viz_cell_indexes,
-                profiler=self,
-            )
-            for i, cell in enumerate(nb_cells, 1)
-        )
-        logger.info(f"Number of cells in the notebook: {len(self.executable_cells)}")
-
-    def inspect_notebook(self) -> None:
-        """
-        Inspect the notebook file to find "skip_profiling" cells and
-        "network_bandwith" value.
-        """
-        nb: NotebookNode = nb_read(self.nb_input_path, NO_CONVERT)
-        self.collect_cells_metadata(nb)
-        self.extract_nb_parameters_as_ordered_dict(nb)
-        self.performance_metrics.total_cells = len(nb.cells)
-        self.performance_metrics.profiled_cells = (
-            self.performance_metrics.total_cells - len(self.skip_profiling_cell_indexes)
-        )
-
-    def collect_cells_metadata(self, notebook: NotebookNode) -> None:
-        """
-        Collect the indexes of cells marked with specific tags, such as:
-        - SKIP_PROFILING_CELL_TAG
-        - WAIT_FOR_VIZ_CELL_TAG
-        Parameters
-        ----------
-        notebook : NotebookNode
-            The notebook to read from.
-        """
-        skip_profiling_cell_indexes: list[int] = []
-        wait_for_viz_cell_indexes: list[int] = []
-        for cell_index, cell in enumerate(notebook.cells, 1):
-            # Get the nb cell tags
-            tags: list[str] = cell.metadata.get("tags", [])
-            if self.SKIP_PROFILING_CELL_TAG in tags:
-                skip_profiling_cell_indexes.append(cell_index)
-            if self.WAIT_FOR_VIZ_CELL_TAG in tags:
-                wait_for_viz_cell_indexes.append(cell_index)
-
-        self.skip_profiling_cell_indexes = frozenset(skip_profiling_cell_indexes)
-        logger.debug(
-            "Profiling metrics for the following cells "
-            f"{tuple(self.skip_profiling_cell_indexes)} will not be collected."
-        )
-        self.wait_for_viz_cell_indexes = frozenset(wait_for_viz_cell_indexes)
-        logger.debug(
-            "The following cells "
-            f"{tuple(self.wait_for_viz_cell_indexes)} will only wait for "
-            "viz changes (if viz is set)."
-        )
-
-    def extract_nb_parameters_as_ordered_dict(self, notebook: NotebookNode) -> None:
-        """
-        Collect the notebook parameters from the cell tagged as parameters and
-        store them as an ordered dictionary.
-        Parameters
-        ----------
-        notebook : NotebookNode
-            The notebook to read from.
-        """
-        for cell in notebook.cells:
-            # Get the nb cell tagged with the specified cell_tag
-            tags: list[str] = cell.metadata.get("tags", [])
-            if self.PARAMETERS_CELL_TAG in tags:
-                cell_source: str = cell.source or ""
-                self.nb_params_dict = parse_assignments(cell_source)
-                logger.debug(f"Notebook parameters found: {self.nb_params_dict}")
-                return
-        logger.debug("No notebook parameters found.")
-
-    def wait_for_notebook_to_load(self) -> None:
-        """
-        Wait for the notebook to load by checking for the presence of the notebook
-        element in the DOM.
-        Retries a few times with exponential backoff in case of failure.
-        """
-        max_retries: int = 5
-        retry_delay: float = 10 + random.uniform(
-            0, 1
-        )  # Initial delay in seconds with jitter
-        for attempt in range(max_retries):
-            try:
-                WebDriverWait(self.driver, timeout=retry_delay, poll_frequency=1).until(
-                    EC.visibility_of_element_located(
-                        (By.CSS_SELECTOR, self.NB_SELECTOR)
-                    )
-                )
-                logger.debug("Notebook loaded")
-                return
-            except TimeoutException:
-                logger.warning(
-                    "Error waiting for notebook to load, "
-                    f"retrying... {attempt + 1}/{max_retries}"
-                )
-                retry_delay *= 2  # Double the delay for the next attempt
-                retry_delay += random.uniform(0, 1)  # Add jitter
-        raise TimeoutException("Notebook did not load in time after multiple attempts.")
-
-    def close(self) -> None:
-        """
-        Close the Selenium driver.
-        """
-        self.driver.quit()
-        logger.debug("Driver closed")
+    def get_kernel_usage(self) -> dict[str, Any]:
+        return self.jupyterlab_helper.get_kernel_usage(self.kernel_id)

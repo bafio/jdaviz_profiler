@@ -5,7 +5,8 @@ from src.generate_notebooks import generate_notebooks
 from src.profile_notebook import profile_notebook
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -19,6 +20,7 @@ def generate_and_profile(
     token: str,
     kernel_name: str,
     headless: bool,
+    max_wait_time: int,
     log_screenshots: bool = False,
     save_metrics: bool = False,
     log_level: str = "INFO",
@@ -37,6 +39,8 @@ def generate_and_profile(
         The name of the kernel to use for the notebook.
     headless : bool
         Whether to run in headless mode.
+    max_wait_time : int
+        Max time to wait after executing each cell (in minutes).
     log_screenshots : bool, optional
         Whether to log screenshots or not (default: False).
     save_metrics : bool, optional
@@ -53,6 +57,7 @@ def generate_and_profile(
         f"Token: {token} -- "
         f"Kernel Name: {kernel_name} -- "
         f"Headless: {headless} -- "
+        f"Max Wait Time: {max_wait_time} -- "
         f"Log Screenshots: {log_screenshots} -- "
         f"Save Metrics: {save_metrics} -- "
         f"Log Level: {log_level}"
@@ -77,6 +82,7 @@ def generate_and_profile(
             kernel_name=kernel_name,
             nb_input_path=nb_input_path,
             headless=headless,
+            max_wait_time=max_wait_time,
             screenshots_dir_path=screenshots_dir_path,
             metrics_dir_path=metrics_dir_path,
             log_level=log_level,

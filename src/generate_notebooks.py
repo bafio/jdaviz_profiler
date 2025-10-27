@@ -7,7 +7,8 @@ from src.notebook_generator import NotebookGenerator
 from src.utils import dict_combinations, load_dict_from_json_file
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -72,6 +73,7 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
     # Iterate over each combination of parameters and generate the notebooks
     logger.info("Generating profiler notebooks...")
 
+    notebook_generator = NotebookGenerator(template_path=template_path)
     nb_base_filename: str = os_path.split(input_dir_path)[-1]
     output_paths: list[str] = []
     for parameters_values in parameters_combinations:
@@ -90,11 +92,10 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
             continue
 
         # Generate the notebook
-        NotebookGenerator(
-            template_path=template_path,
-            output_path=output_path,
+        notebook_generator.generate_and_save(
             parameters_values=parameters_values,
-        ).generate()
+            output_path=output_path,
+        )
 
         output_paths.append(output_path)
 

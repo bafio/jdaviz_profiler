@@ -14,7 +14,8 @@ import logging
 from src.profile_notebook import profile_notebook
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -62,6 +63,13 @@ if __name__ == "__main__":
         type=bool,
         default=False,
         choices=[True, False],
+    )
+    parser.add_argument(
+        "--max_wait_time",
+        help="Max time to wait after executing each cell (in minutes, default: 5).",
+        required=False,
+        type=int,
+        default=5,
     )
     parser.add_argument(
         "--screenshots_dir_path",

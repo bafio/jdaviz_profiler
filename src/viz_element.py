@@ -1,15 +1,18 @@
 import logging
 from dataclasses import dataclass
-from time import sleep
 from typing import TYPE_CHECKING, ClassVar
 
 from selenium.webdriver.remote.webelement import WebElement
 
+from src.utils import explicit_wait
+
+# Avoid circular import
 if TYPE_CHECKING:
-    from .profiler import Profiler  # Avoid circular import
+    from .profiler import Profiler
 
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -36,14 +39,14 @@ class VizElement:
             True if the viz element is stable, False otherwise.
         """
         if self.element is None:
-            logger.debug("Viz element element is None, cannot be stable")
+            logger.debug("Viz element element is None, cannot be stable.")
             return False
 
         # Take a screenshot of the viz element
         screenshot_before: bytes = self.element.screenshot_as_png
 
         # Wait a short period before taking another screenshot
-        sleep(self.WAIT_TIME_DURING_SCREENSHOTS)
+        explicit_wait(self.WAIT_TIME_DURING_SCREENSHOTS)
 
         # Take another screenshot of the viz element
         screenshot_after: bytes = self.element.screenshot_as_png

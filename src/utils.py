@@ -3,10 +3,14 @@ import itertools
 import json
 import logging
 from collections import OrderedDict
+from time import sleep, time
 from typing import Any
 
+from nbformat import NotebookNode
+
 logger: logging.Logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Default level is INFO
+# Default level is INFO
+logger.setLevel(logging.INFO)
 console_handler: logging.StreamHandler = logging.StreamHandler()
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -15,6 +19,15 @@ logger.addHandler(console_handler)
 
 KILOBYTE: int = 1024
 MEGABYTE: int = 1024 * KILOBYTE
+
+
+def explicit_wait(seconds: float) -> None:
+    logger.debug(f"Wait for {seconds:.2} seconds...")
+    sleep(seconds)
+
+
+def elapsed_time(from_time: float = 0) -> float:
+    return time() - from_time
 
 
 def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
@@ -104,3 +117,44 @@ def dict_combinations(input_dict: dict) -> list[dict[str, Any]]:
     keys: list[str] = input_dict.keys()
     values: list[list[Any]] = input_dict.values()
     return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
+
+
+def get_notebook_cell_indexes_for_tag(
+    notebook: NotebookNode, cell_tag: str
+) -> list[int]:
+    """
+    Collect the indexes of cells marked with the requested tag `cell_tag`.
+    Parameters
+    ----------
+    notebook : NotebookNode
+        The notebook to read from.
+    """
+    cell_indexes: list[int] = []
+    for cell_index, cell in enumerate(notebook.cells, 1):
+        # Get the nb cell tagged with the specified cell_tag
+        tags: list[str] = cell.metadata.get("tags", [])
+        if cell_tag in tags:
+            cell_indexes.append(cell_index)
+    return cell_indexes
+
+
+def get_notebook_parameters(
+    notebook: NotebookNode, cell_tag: str
+) -> OrderedDict[str, Any]:
+    """
+    Return the parameters as an ordered dictionary from the notebook's cell
+    tagged as `cell_tag`.
+    Parameters
+    ----------
+    notebook : NotebookNode
+        The notebook to read from.
+    cell_tag: str
+        The cell tag
+    """
+    for cell in notebook.cells:
+        # Get the nb cell tagged with the specified cell_tag
+        tags: list[str] = cell.metadata.get("tags", [])
+        if cell_tag in tags:
+            cell_source: str = cell.source or ""
+            return parse_assignments(cell_source)
+    return OrderedDict()
