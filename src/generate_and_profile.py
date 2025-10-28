@@ -3,15 +3,9 @@ from os.path import join as os_path_join
 
 from src.generate_notebooks import generate_notebooks
 from src.profile_notebook import profile_notebook
+from src.utils import get_logger
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 
 def generate_and_profile(
@@ -23,7 +17,6 @@ def generate_and_profile(
     max_wait_time: int,
     log_screenshots: bool = False,
     save_metrics: bool = False,
-    log_level: str = "INFO",
 ) -> None:
     """
     Generate profiler notebooks from a template and run the profiler on them.
@@ -45,11 +38,7 @@ def generate_and_profile(
         Whether to log screenshots or not (default: False).
     save_metrics : bool, optional
         Whether to save profiling metrics to a CSV file (default: False).
-    log_level : str, optional
-        Set the logging level (default: "INFO").
     """
-    # Set up logging
-    logger.setLevel(log_level.upper())
     logger.debug(
         "Generating and profiling notebooks with "
         f"Input Directory Path: {input_dir_path} -- "
@@ -60,12 +49,9 @@ def generate_and_profile(
         f"Max Wait Time: {max_wait_time} -- "
         f"Log Screenshots: {log_screenshots} -- "
         f"Save Metrics: {save_metrics} -- "
-        f"Log Level: {log_level}"
     )
 
-    nb_input_paths: list[str] = generate_notebooks(
-        input_dir_path=input_dir_path, log_level=log_level
-    )
+    nb_input_paths: list[str] = generate_notebooks(input_dir_path=input_dir_path)
     screenshots_dir_path: str | None = (
         os_path_join(input_dir_path, "screenshots") if log_screenshots else None
     )
@@ -85,5 +71,4 @@ def generate_and_profile(
             max_wait_time=max_wait_time,
             screenshots_dir_path=screenshots_dir_path,
             metrics_dir_path=metrics_dir_path,
-            log_level=log_level,
         )

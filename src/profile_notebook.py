@@ -6,15 +6,9 @@ from time import gmtime, strftime
 
 from src.jupyterlab_helper import JupyterLabHelper
 from src.profiler import Profiler
+from src.utils import get_logger
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 
 def profile_notebook(
@@ -26,7 +20,6 @@ def profile_notebook(
     max_wait_time: int,
     screenshots_dir_path: str | None = None,
     metrics_dir_path: str | None = None,
-    log_level: str = "INFO",
 ) -> None:
     """
     Profile the notebook at the specified URL using Selenium.
@@ -50,8 +43,6 @@ def profile_notebook(
     metrics_dir_path : str, optional
         Path to the directory to where metrics will be stored, if not passed as
         an argument, metrics will not be saved to file.
-    log_level : str, optional
-        Set the logging level (default: INFO).
     Raises
     ------
     FileNotFoundError
@@ -61,8 +52,6 @@ def profile_notebook(
     Exception
         For any other unexpected errors.
     """
-    # Set up logging
-    logger.setLevel(log_level.upper())
     logger.debug(
         "Starting profiler with "
         f"URL: {url} -- "
@@ -73,7 +62,6 @@ def profile_notebook(
         f"Max Wait Time: {max_wait_time} -- "
         f"Screenshots Dir Path: {screenshots_dir_path} -- "
         f"Metrics Dir Path: {metrics_dir_path} -- "
-        f"Log Level: {log_level}"
     )
 
     if screenshots_dir_path:

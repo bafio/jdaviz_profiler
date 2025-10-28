@@ -4,23 +4,16 @@ from os import path as os_path
 from typing import Any
 
 from src.notebook_generator import NotebookGenerator
-from src.utils import dict_combinations, load_dict_from_json_file
+from src.utils import dict_combinations, get_logger, load_dict_from_json_file
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 NOTEBOOK_TEMPLATE_FILENAME: str = "template.ipynb"
 PARAMS_FILENAME: str = "params.json"
 OUTPUT_DIR_PATH: str = "notebooks"
 
 
-def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str]:
+def generate_notebooks(input_dir_path: str) -> list[str]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.json, and
     save them to the "notebooks" directory.
@@ -28,19 +21,13 @@ def generate_notebooks(input_dir_path: str, log_level: str = "INFO") -> list[str
     ----------
     input_dir_path : str
         Path to the directory containing the template.ipynb and params.json files.
-    log_level : str, optional
-        Logging level (default is "INFO").
     Raises
     ------
     FileNotFoundError
         If the template.ipynb does not exist or the params.json file does not exist.
     """
-    # Set up logging
-    logger.setLevel(log_level.upper())
     logger.debug(
-        "Starting notebook generation with "
-        f"Input Directory Path: {input_dir_path} -- "
-        f"Log Level: {log_level}"
+        f"Starting notebook generation with Input Directory Path: {input_dir_path} -- "
     )
 
     # Resolve the template.ipynb file path, params file path, and output directory path

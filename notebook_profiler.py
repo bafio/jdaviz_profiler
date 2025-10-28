@@ -1,26 +1,10 @@
 #!/usr/bin/env python3
-"""
-Uses Selenium to launch and interact with JupyterLab, executing each notebook cell and
-recording performance metrics.
-
-Usage:
-$> python profiler.py --url <JupyterLab URL> --token <API Token> \
-    --kernel_name <kernel name> --nb_input_path <notebook path>
-"""
 
 import argparse
-import logging
+from typing import Any
 
 from src.profile_notebook import profile_notebook
-
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+from src.utils import set_logger
 
 if __name__ == "__main__":
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -96,4 +80,12 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    profile_notebook(**vars(parser.parse_args()))
+    args: argparse.Namespace = parser.parse_args()
+
+    # Set logger with given log_level
+    set_logger(log_level=args.log_level)
+
+    args: dict[str, Any] = vars(args)
+    del args["log_level"]
+
+    profile_notebook(**args)

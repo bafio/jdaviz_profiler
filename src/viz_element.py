@@ -4,23 +4,16 @@ from typing import TYPE_CHECKING, ClassVar
 
 from selenium.webdriver.remote.webelement import WebElement
 
-from src.utils import explicit_wait
+from src.utils import explicit_wait, get_logger
 
 # Avoid circular import
 if TYPE_CHECKING:
     from .profiler import Profiler
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 
-@dataclass(eq=False, frozen=True)
+@dataclass(frozen=True, eq=False)
 class VizElement:
     """Class representing the viz element in a Jupyter notebook."""
 

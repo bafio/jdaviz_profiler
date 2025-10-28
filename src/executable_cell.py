@@ -11,23 +11,16 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 
 from src.performance_metrics import CellExecutionStatus, CellPerformanceMetrics
-from src.utils import elapsed_time, explicit_wait
+from src.utils import elapsed_time, explicit_wait, get_logger
 
 # Avoid circular import
 if TYPE_CHECKING:
     from src.profiler import Profiler
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 
-@dataclass(eq=False)
+@dataclass(frozen=True, eq=False)
 class ExecutableCell:
     """Class representing an executable cell in a Jupyter notebook."""
 
@@ -38,7 +31,7 @@ class ExecutableCell:
     wait_for_viz: bool
     profiler: "Profiler"
     performance_metrics: CellPerformanceMetrics = field(
-        default_factory=CellPerformanceMetrics, repr=False
+        default_factory=CellPerformanceMetrics, repr=False, init=False
     )
 
     # Seconds to wait after the execution command if no need to
@@ -103,7 +96,7 @@ class ExecutableCell:
                         CellExecutionStatus.FAILED
                     )
                     logger.warning(
-                        f"Cell {self.index} execution has been interrupted due to a"
+                        f"Cell {self.index} execution has been interrupted due to a "
                         "kernel restart."
                     )
                     break
@@ -165,6 +158,9 @@ class ExecutableCell:
             )
 
     def capture_metrics(self, start_time: float) -> None:
+        if self.performance_metrics.execution_status == CellExecutionStatus.FAILED:
+            return
+
         # Save time elapsed
         self.performance_metrics.total_execution_time = elapsed_time(start_time)
 

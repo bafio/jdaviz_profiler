@@ -10,14 +10,9 @@ from nbformat import reads as nb_reads
 from nbformat import write as nb_write
 from nbformat import writes as nb_writes
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+from src.utils import get_logger
+
+logger: logging.Logger = get_logger()
 
 
 @dataclass(frozen=True, eq=False)

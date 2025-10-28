@@ -8,21 +8,29 @@ from typing import Any
 
 from nbformat import NotebookNode
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
-
 KILOBYTE: int = 1024
 MEGABYTE: int = 1024 * KILOBYTE
+LOGGER_NAME = "JDAVIZ_PROFILER"
+
+
+def set_logger(log_level: str) -> None:
+    _logger: logging.Logger = logging.getLogger(LOGGER_NAME)
+    _logger.setLevel(log_level)
+    console_handler: logging.StreamHandler = logging.StreamHandler()
+    console_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [[%(name)s %(levelname)8s]] --- "
+            "%(module)s:%(funcName)s@%(lineno)d \n ->> %(message)s"
+        )
+    )
+    _logger.addHandler(console_handler)
+
+
+def get_logger() -> logging.Logger:
+    return logging.getLogger(LOGGER_NAME)
 
 
 def explicit_wait(seconds: int | float) -> None:
-    logger.debug(f"Wait for {float(seconds):.2} seconds...")
     sleep(seconds)
 
 
@@ -52,7 +60,6 @@ def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
         data: dict = json.loads(f.read())
     if not data:
         msg: str = f"No data found in {file_path}"
-        logger.error(msg)
         raise ValueError(msg)
     return data
 

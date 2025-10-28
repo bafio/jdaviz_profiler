@@ -1,27 +1,10 @@
 #!/usr/bin/env python3
-"""
-Script to generate the parameterized notebooks from a template.ipynb and params.json and
-run the profiler on them.
-
-Usage:
-$> python generate_and_profile.py --input_dir_path <usecase path> \
-    --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
-"""
 
 import argparse
-import logging
+from typing import Any
 
 from src.generate_and_profile import generate_and_profile
-
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
-
+from src.utils import set_logger
 
 if __name__ == "__main__":
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -100,4 +83,12 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
-    generate_and_profile(**vars(parser.parse_args()))
+    args: argparse.Namespace = parser.parse_args()
+
+    # Set logger with given log_level
+    set_logger(log_level=args.log_level)
+
+    args: dict[str, Any] = vars(args)
+    del args["log_level"]
+
+    generate_and_profile(**args)

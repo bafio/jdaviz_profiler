@@ -1,17 +1,7 @@
-import logging
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
-
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
 
 
 @dataclass
@@ -102,7 +92,7 @@ class CellPerformanceMetrics(PerformanceMetrics):
     def __str__(self) -> str:
         return (
             f"Cell {self.cell_index}: "
-            f"Execution: {self.execution_status} "
+            f"Execution: {self.execution_status.value} "
             f"{super().__str__()}"
         )
 

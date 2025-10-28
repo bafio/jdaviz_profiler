@@ -7,14 +7,9 @@ from typing import Any
 import requests
 from requests.exceptions import RequestException
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+from src.utils import get_logger
+
+logger: logging.Logger = get_logger()
 
 
 @dataclass(frozen=True, eq=False)

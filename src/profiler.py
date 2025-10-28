@@ -31,19 +31,13 @@ from src.performance_metrics import CellExecutionStatus, NotebookPerformanceMetr
 from src.utils import (
     MEGABYTE,
     explicit_wait,
+    get_logger,
     get_notebook_cell_indexes_for_tag,
     get_notebook_parameters,
 )
 from src.viz_element import VizElement
 
-logger: logging.Logger = logging.getLogger(__name__)
-# Default level is INFO
-logger.setLevel(logging.INFO)
-console_handler: logging.StreamHandler = logging.StreamHandler()
-console_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(console_handler)
+logger: logging.Logger = get_logger()
 
 
 @dataclass(eq=False)
@@ -57,21 +51,25 @@ class Profiler:
     screenshots_dir_path: str | None
     metrics_dir_path: str | None
     jupyterlab_helper: JupyterLabHelper
-    driver: WebDriver | None = field(default=None, repr=False)
-    viz_element: WebElement | None = field(default=None, repr=False)
+    driver: WebDriver | None = field(default=None, repr=False, init=False)
+    viz_element: WebElement | None = field(default=None, repr=False, init=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
-        default_factory=tuple, repr=False
+        default_factory=tuple, repr=False, init=False
     )
     nb_params_dict: OrderedDict[str, Any] = field(
-        default_factory=OrderedDict, repr=False
+        default_factory=OrderedDict, repr=False, init=False
     )
-    ui_network_throttling_value: float | None = field(default=None, repr=False)
+    ui_network_throttling_value: float | None = field(
+        default=None, repr=False, init=False
+    )
     skip_profiling_cell_indexes: frozenset = field(
-        default_factory=frozenset, repr=False
+        default_factory=frozenset, repr=False, init=False
     )
-    wait_for_viz_cell_indexes: frozenset = field(default_factory=frozenset, repr=False)
+    wait_for_viz_cell_indexes: frozenset = field(
+        default_factory=frozenset, repr=False, init=False
+    )
     performance_metrics: NotebookPerformanceMetrics = field(
-        default_factory=NotebookPerformanceMetrics, repr=False
+        default_factory=NotebookPerformanceMetrics, repr=False, init=False
     )
 
     # The width and height to set for the browser viewport to make the page really tall
@@ -246,12 +244,14 @@ class Profiler:
 
     def execute_notebook_cells(self) -> None:
         # Start profiling
-        logger.info("Execute notebook cells.")
+        logger.info("Executing notebook cells.")
 
         # Execute each cell and wait for outputs
         for ec in self.executable_cells:
             ec.execute()
-            logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")
+            logging.info(
+                f"Cell execution: {ec.performance_metrics.execution_status.value}"
+            )
             self.collect_executable_cell_metrics(ec)
 
             if ec.performance_metrics.execution_status != CellExecutionStatus.COMPLETED:
