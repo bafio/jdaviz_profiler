@@ -84,7 +84,7 @@ class ExecutableCell:
 
             first_iteration = True
             while True:
-                not first_iteration and self.capture_metrics()
+                not first_iteration and self.capture_metrics(start_time)
                 first_iteration = False
 
                 # Check for timeout
@@ -151,7 +151,7 @@ class ExecutableCell:
                     )
                     break
 
-            self.capture_metrics()
+            self.capture_metrics(start_time)
 
             # Compute performance metrics
             self.compute_performance_metrics()

@@ -21,8 +21,8 @@ KILOBYTE: int = 1024
 MEGABYTE: int = 1024 * KILOBYTE
 
 
-def explicit_wait(seconds: float) -> None:
-    logger.debug(f"Wait for {seconds:.2} seconds...")
+def explicit_wait(seconds: int | float) -> None:
+    logger.debug(f"Wait for {float(seconds):.2} seconds...")
     sleep(seconds)
 
 

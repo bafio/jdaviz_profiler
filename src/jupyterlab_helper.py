@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cache, cached_property
 from typing import Any
 
 import requests
@@ -31,7 +31,8 @@ class JupyterLabHelper:
             "Content-Type": "application/json",
         }
 
-    def get_notebook_filename(self, notebook_path: str) -> str:
+    @staticmethod
+    def get_notebook_filename(notebook_path: str) -> str:
         """
         Extract the notebook filename from the given path.
         Parameters
@@ -45,6 +46,7 @@ class JupyterLabHelper:
         """
         return notebook_path.split("/")[-1]
 
+    @cache
     def get_notebook_url(self, notebook_path: str) -> str:
         """
         Get the full URL to access a notebook in JupyterLab.
@@ -171,6 +173,9 @@ class JupyterLabHelper:
             For any other unexpected errors.
         """
         kernel_id = self.get_kernel_id_from_name(kernel_name)
+        if not kernel_id:
+            logger.warning(f"No active kernel found for kernel name: {kernel_name}.")
+            return
         try:
             # Restart the kernel
             restart_url: str = f"{self.url}/api/kernels/{kernel_id}/restart"
@@ -187,49 +192,6 @@ class JupyterLabHelper:
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
-
-    def get_kernel_usage(self, kernel_id: str) -> dict[str, Any]:
-        """
-        Get the usage information for a specific kernel.
-        Parameters
-        ----------
-        kernel_id : str
-            The ID of the kernel.
-        Returns
-        -------
-        dict[str, Any]
-            The usage information for the kernel.
-        Raises
-        ------
-        RequestException
-            If there is an error communicating with the JupyterLab server.
-        Exception
-            For any other unexpected errors.
-        """
-        try:
-            # Get the usage info for a specific kernel
-            kernel_usage_url: str = (
-                f"{self.url}/api/metrics/v1/kernel_usage/get_usage/{kernel_id}"
-            )
-            response: requests.Response = requests.get(
-                kernel_usage_url, headers=self.headers
-            )
-            response.raise_for_status()
-            content: dict[str, Any] = response.json().get("content", {})
-
-            logger.debug(f"Kernel usage info: {content}")
-
-            return content
-
-        except RequestException as e:
-            logger.exception(f"Error communicating with JupyterLab server: {e}")
-            raise e
-        except Exception as e:
-            logger.exception(f"An unexpected error occurred: {e}")
-            raise e
-
-    def get_current_kernel_pid(self, kernel_id: str) -> int:
-        return self.get_kernel_usage(kernel_id).get("pid")
 
     def upload_notebook(self, notebook_path: str) -> None:
         """
@@ -310,3 +272,46 @@ class JupyterLabHelper:
         except Exception as e:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
+
+    def get_kernel_usage(self, kernel_id: str) -> dict[str, Any]:
+        """
+        Get the usage information for a specific kernel.
+        Parameters
+        ----------
+        kernel_id : str
+            The ID of the kernel.
+        Returns
+        -------
+        dict[str, Any]
+            The usage information for the kernel.
+        Raises
+        ------
+        RequestException
+            If there is an error communicating with the JupyterLab server.
+        Exception
+            For any other unexpected errors.
+        """
+        try:
+            # Get the usage info for a specific kernel
+            kernel_usage_url: str = (
+                f"{self.url}/api/metrics/v1/kernel_usage/get_usage/{kernel_id}"
+            )
+            response: requests.Response = requests.get(
+                kernel_usage_url, headers=self.headers
+            )
+            response.raise_for_status()
+            content: dict[str, Any] = response.json().get("content", {})
+
+            logger.debug(f"Kernel usage info: {content}")
+
+            return content
+
+        except RequestException as e:
+            logger.exception(f"Error communicating with JupyterLab server: {e}")
+            raise e
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred: {e}")
+            raise e
+
+    def get_current_kernel_pid(self, kernel_id: str) -> int:
+        return self.get_kernel_usage(kernel_id).get("pid")

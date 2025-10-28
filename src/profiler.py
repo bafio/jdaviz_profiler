@@ -76,7 +76,7 @@ class Profiler:
 
     # The width and height to set for the browser viewport to make the page really tall
     # to avoid scrollbars and scrolling issues
-    VIEWPORT_SIZE: ClassVar[dict[str, int]] = {"width": 10000, "height": 20000}
+    VIEWPORT_SIZE: ClassVar[dict[str, int]] = {"width": 2000, "height": 20000}
 
     # Window size options
     WINDOW_SIZE_OPTION: ClassVar[str] = (
@@ -227,7 +227,7 @@ class Profiler:
             By.CSS_SELECTOR, self.NB_CELLS_SELECTOR
         )
 
-        assert len(nb_ui_cells) == len(self.performance_metrics.total_cells)
+        assert len(nb_ui_cells) == self.performance_metrics.total_cells
 
         self.executable_cells = tuple(
             ExecutableCell(
@@ -268,15 +268,13 @@ class Profiler:
         self.performance_metrics.total_execution_time += (
             executable_cell.performance_metrics.total_execution_time
         )
-        self.performance_metrics.client_average_cpu_usage_list.append(
-            executable_cell.performance_metrics.client_average_cpu_usage
-        )
-        self.performance_metrics.client_average_memory_usage_list.append(
-            executable_cell.performance_metrics.client_average_memory_usage
-        )
         self.performance_metrics.client_total_data_received += (
             executable_cell.performance_metrics.client_total_data_received
         )
+        for s, m in self.performance_metrics.SOURCE_METRIC_COMBO:
+            getattr(self.performance_metrics, f"{s}_average_{m}_usage_list").append(
+                getattr(executable_cell.performance_metrics, f"{s}_average_{m}_usage")
+            )
 
     def save_performance_metrics_to_csv(self) -> None:
         """
