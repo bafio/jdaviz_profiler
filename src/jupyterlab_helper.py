@@ -9,6 +9,7 @@ from requests.exceptions import RequestException
 
 from src.utils import get_logger
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -21,6 +22,13 @@ class JupyterLabHelper:
 
     @cached_property
     def headers(self) -> dict[str, str]:
+        """
+        Get the headers required for JupyterLab API requests.
+        Returns
+        -------
+        dict[str, str]
+            Headers including the authorization token.
+        """
         return {
             "Authorization": f"token {self.token}",
             "Content-Type": "application/json",
@@ -95,7 +103,7 @@ class JupyterLabHelper:
                 shutdown_response.raise_for_status()
 
                 # Print a status message based on the session type
-                if "kernel" in session and session["kernel"]:
+                if session.get("kernel"):
                     logger.info(
                         "Shut down notebook/console session: "
                         f"{session['path']} (ID: {session_id})"
@@ -167,6 +175,7 @@ class JupyterLabHelper:
         Exception
             For any other unexpected errors.
         """
+        # Get the kernel ID from the kernel name
         kernel_id = self.get_kernel_id_from_name(kernel_name)
         if not kernel_id:
             logger.warning(f"No active kernel found for kernel name: {kernel_name}.")
@@ -190,7 +199,7 @@ class JupyterLabHelper:
 
     def upload_notebook(self, notebook_path: str) -> None:
         """
-        Upload the notebook to the JupyterLab instance.
+        Upload the notebook from the given path to the JupyterLab instance.
         Parameters
         ----------
         notebook_path : str
@@ -238,7 +247,7 @@ class JupyterLabHelper:
 
     def delete_notebook(self, notebook_filename: str) -> None:
         """
-        Delete the notebook from the JupyterLab instance.
+        Delete the notebook with the given filename from the JupyterLab instance.
         Parameters
         ----------
         notebook_filename : str
@@ -309,4 +318,21 @@ class JupyterLabHelper:
             raise e
 
     def get_current_kernel_pid(self, kernel_id: str) -> int:
+        """
+        Get the PID of the current process running on a kernel by its ID.
+        Parameters
+        ----------
+        kernel_id : str
+            The ID of the kernel.
+        Returns
+        -------
+        int
+            The PID of the current process running on the kernel.
+        Raises
+        ------
+        RequestException
+            If there is an error communicating with the JupyterLab server.
+        Exception
+            For any other unexpected errors.
+        """
         return self.get_kernel_usage(kernel_id).get("pid")

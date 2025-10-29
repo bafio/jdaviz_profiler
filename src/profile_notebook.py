@@ -8,6 +8,7 @@ from src.jupyterlab_helper import JupyterLabHelper
 from src.profiler import Profiler
 from src.utils import get_logger
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -84,14 +85,16 @@ def profile_notebook(
         )
         makedirs(metrics_dir_path, exist_ok=True)
 
-    # Initialize JupyterLab helper and clear any existing sessions
+    # Initialize JupyterLab helper
     jupyterlab_helper: JupyterLabHelper = JupyterLabHelper(url=url, token=token)
+
+    # Prepare JupyterLab environment
     jupyterlab_helper.clear_all_jupyterlab_sessions()
     jupyterlab_helper.restart_kernel(kernel_name)
     jupyterlab_helper.upload_notebook(nb_input_path)
 
-    # Start Selenium and run the profiler
     try:
+        # Start Selenium and run the profiler
         profiler: Profiler = Profiler(
             kernel_name=kernel_name,
             nb_input_path=nb_input_path,

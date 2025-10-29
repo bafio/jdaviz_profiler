@@ -14,6 +14,14 @@ LOGGER_NAME = "JDAVIZ_PROFILER"
 
 
 def set_logger(log_level: str) -> None:
+    """
+    Set up the logger with the specified log level.
+    Parameters
+    ----------
+    log_level : str
+        The logging level (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
+    """
+    # Configure logger
     _logger: logging.Logger = logging.getLogger(LOGGER_NAME)
     _logger.setLevel(log_level)
     console_handler: logging.StreamHandler = logging.StreamHandler()
@@ -27,14 +35,39 @@ def set_logger(log_level: str) -> None:
 
 
 def get_logger() -> logging.Logger:
+    """
+    Get the configured logger.
+    Returns
+    -------
+    logging.Logger
+        The configured logger instance.
+    """
     return logging.getLogger(LOGGER_NAME)
 
 
 def explicit_wait(seconds: int | float) -> None:
+    """
+    Pause execution for a specified number of seconds.
+    Parameters
+    ----------
+    seconds : int | float
+        Number of seconds to pause execution.
+    """
     sleep(seconds)
 
 
 def elapsed_time(from_time: float = 0) -> float:
+    """
+    Calculate the elapsed time since a given starting time.
+    Parameters
+    ----------
+    from_time : float, optional
+        The starting time in seconds since the epoch. Default is 0.
+    Returns
+    -------
+    float
+        The elapsed time in seconds.
+    """
     return time() - from_time
 
 
@@ -130,7 +163,7 @@ def get_notebook_cell_indexes_for_tag(
     notebook: NotebookNode, cell_tag: str
 ) -> list[int]:
     """
-    Collect the indexes of cells marked with the requested tag `cell_tag`.
+    Collect the indexes of notebook cells marked with the requested tag `cell_tag`.
     Parameters
     ----------
     notebook : NotebookNode

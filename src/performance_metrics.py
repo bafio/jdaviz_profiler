@@ -23,6 +23,8 @@ class PerformanceMetrics:
         default_factory=list, repr=False
     )
 
+    # Define combinations of sources and metrics
+    # like (client,cpu), (kernel,memory), etc.
     SOURCE_METRIC_COMBO: ClassVar[tuple[str, ...]] = tuple(
         (s, m)
         for s in (
@@ -34,6 +36,9 @@ class PerformanceMetrics:
             "memory",
         )
     )
+
+    # Keys to exclude from the custom dict factory
+    # these are the lists used to compute averages
     EXCLUDE_KEYS: ClassVar[tuple[str, ...]] = tuple(
         f"{source}_average_{metric}_usage_list"
         for source, metric in SOURCE_METRIC_COMBO
@@ -44,6 +49,10 @@ class PerformanceMetrics:
         """
         Custom dict factory to round float values to 2 decimal places and
         exclude certain keys.
+        Parameters:
+            data (list[tuple[str, Any]]): List of key-value pairs.
+        Returns:
+            OrderedDict[str, Any]: Processed ordered dictionary.
         """
         return OrderedDict(
             {
@@ -72,7 +81,7 @@ class PerformanceMetrics:
 
 class CellExecutionStatus(Enum):
     """
-    Represents the various possible statuses of an execution process.
+    Represents the various possible statuses of a notebook cell execution process.
     """
 
     PENDING = "Pending"

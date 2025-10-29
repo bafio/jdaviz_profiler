@@ -6,6 +6,7 @@ from typing import Any
 from src.notebook_generator import NotebookGenerator
 from src.utils import dict_combinations, get_logger, load_dict_from_json_file
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 NOTEBOOK_TEMPLATE_FILENAME: str = "template.ipynb"
@@ -60,6 +61,7 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
     # Iterate over each combination of parameters and generate the notebooks
     logger.info("Generating profiler notebooks...")
 
+    # Initialize the NotebookGenerator
     notebook_generator = NotebookGenerator(template_path=template_path)
     nb_base_filename: str = os_path.split(input_dir_path)[-1]
     output_paths: list[str] = []
@@ -84,9 +86,12 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
             output_path=output_path,
         )
 
+        # Append the output path to the list
         output_paths.append(output_path)
 
-    logger.info(f"Total notebooks generated: {len(output_paths)}")
-    logger.info("Profiler notebooks generation completed.")
+    logger.info(
+        "Notebooks generation completed. "
+        f"Total notebooks generated: {len(output_paths)}"
+    )
 
     return output_paths

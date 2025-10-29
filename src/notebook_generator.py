@@ -12,6 +12,7 @@ from nbformat import writes as nb_writes
 
 from src.utils import get_logger
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -19,7 +20,7 @@ logger: logging.Logger = get_logger()
 class NotebookGenerator:
     """
     A class to generate Jupyter notebooks by filling in parameters in a
-    template notebook and cleaning it up.
+    template notebook file.
     Attributes
     ----------
     template_path : str

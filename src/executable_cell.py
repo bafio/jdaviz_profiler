@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from os import linesep
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import psutil
 from selenium.webdriver.common.by import By
@@ -17,6 +17,7 @@ from src.utils import elapsed_time, explicit_wait, get_logger
 if TYPE_CHECKING:
     from src.profiler import Profiler
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -53,6 +54,7 @@ class ExecutableCell:
     OUTPUT_CELL_DONE_REGEX: ClassVar[str] = r"^.*(?P<DONE>DONE).*$"
 
     def __post_init__(self):
+        """Post-initialization to set the cell index in performance metrics."""
         self.performance_metrics.cell_index = self.index
 
     def execute(self) -> None:
@@ -62,35 +64,38 @@ class ExecutableCell:
         try:
             logger.info(f"Executing cell {self.index}")
 
-            # Initialize variables to track the viz element and elapsed time
+            # Initialize variables to track the progress of the cell execution
             viz_is_stable: bool = False
             done_found: bool = False
             start_time: float = elapsed_time()
-            kernel_pid = self.profiler.get_current_kernel_pid()
+            kernel_pid: int = self.profiler.get_current_kernel_pid()
 
             # Click on the cell
             self.cell.click()
             # Execute the cell
             self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
 
+            # Set initial execution status to IN_PROGRESS
             self.performance_metrics.execution_status = CellExecutionStatus.IN_PROGRESS
 
-            first_iteration = True
+            # Used to skip the first metrics capture
+            first_iter: bool | None = True
             while True:
-                not first_iteration and self.capture_metrics(start_time)
-                first_iteration = False
+                # Capture metrics after the first iteration
+                first_iter = not first_iter and self.capture_metrics(start_time)
 
-                # Check for timeout
-                if elapsed_time(start_time) > self.max_wait_time:
+                # Loop exit check: check for timeout
+                if _elapsed_time := elapsed_time(start_time) > self.max_wait_time:
                     self.performance_metrics.execution_status = (
                         CellExecutionStatus.TIMED_OUT
                     )
                     logger.warning(
-                        f"Cell {self.index} execution timed out after "
-                        f"{self.max_wait_time} seconds"
+                        f"Cell {self.index} execution stopped after "
+                        f"{_elapsed_time} seconds"
                     )
                     break
 
+                # Loop exit check: check if the kernel has restarted
                 if kernel_pid != self.profiler.get_current_kernel_pid():
                     self.performance_metrics.execution_status = (
                         CellExecutionStatus.FAILED
@@ -111,8 +116,7 @@ class ExecutableCell:
                     logger.debug(f"Cell {self.index} DONE statement not found yet...")
                     continue
 
-                logger.debug(f"Cell {self.index} DONE statement found, moving on...")
-
+                # Loop exit check: if we don't need to wait for viz changes, we are done
                 if not self.wait_for_viz:
                     logger.debug(
                         f"Cell {self.index} is not tagged as to wait for viz changes, "
@@ -135,6 +139,7 @@ class ExecutableCell:
                     logger.debug("Looking for the viz element in the page...")
                     self.profiler.detect_viz_element()
 
+                # Loop exit check: if the viz is stable, we are done
                 if viz_is_stable:
                     logger.debug(
                         f"Cell {self.index} viz element is stable, moving on..."
@@ -144,10 +149,11 @@ class ExecutableCell:
                     )
                     break
 
+            # Capture metrics one last time after loop exit
             self.capture_metrics(start_time)
 
             # Compute performance metrics
-            self.compute_performance_metrics()
+            self.performance_metrics.compute_metrics()
 
             # Log the performance metrics
             logger.info(str(self.performance_metrics))
@@ -158,7 +164,19 @@ class ExecutableCell:
             )
 
     def capture_metrics(self, start_time: float) -> None:
-        if self.performance_metrics.execution_status == CellExecutionStatus.FAILED:
+        """
+        Capture profiling metrics for the cell execution.
+        Parameters
+        ----------
+        start_time : float
+            The start time of the cell execution.
+        """
+        # Skip metrics capture if profiling is skipped or
+        # if execution has already finished and is failed
+        if (
+            self.skip_profiling
+            or self.performance_metrics.execution_status == CellExecutionStatus.FAILED
+        ):
             return
 
         # Save time elapsed
@@ -168,27 +186,46 @@ class ExecutableCell:
         self.performance_metrics.client_average_cpu_usage_list.append(
             psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
         )
+
         # Capture client memory usage
         self.performance_metrics.client_average_memory_usage_list.append(
             psutil.virtual_memory().percent
         )
 
-        # Get kernel usage metrics
-        kernel_usage = self.profiler.get_kernel_usage()
+        # Get kernel usage metrics only if present
+        kernel_usage: dict[str, Any] = self.profiler.get_kernel_usage()
+        if "kernel_cpu" in kernel_usage and "host_virtual_memory" in kernel_usage:
+            # Capture kernel CPU usage
+            self.performance_metrics.kernel_average_cpu_usage_list.append(
+                kernel_usage["kernel_cpu"]
+            )
+            # Capture kernel memory usage
+            self.performance_metrics.kernel_average_memory_usage_list.append(
+                kernel_usage["host_virtual_memory"]["percent"]
+            )
+        else:
+            logger.warning(
+                f"Kernel usage metrics not available for cell {self.index}, "
+                "skipping kernel metrics capture."
+            )
 
-        # Capture kernel CPU usage
-        self.performance_metrics.kernel_average_cpu_usage_list.append(
-            kernel_usage.get("kernel_cpu", 0)
-        )
-
-        # Capture kernel memory usage
-        self.performance_metrics.kernel_average_memory_usage_list.append(
-            kernel_usage.get("host_virtual_memory", {}).get("percent", 0)
-        )
+        # Capture client data received from the profiler only when
+        # execution is not in progress
+        if self.performance_metrics.execution_status not in (
+            CellExecutionStatus.PENDING,
+            CellExecutionStatus.IN_PROGRESS,
+        ):
+            timestamp_end: datetime = datetime.now()
+            timestamp_start: datetime = timestamp_end - timedelta(
+                seconds=self.performance_metrics.total_execution_time
+            )
+            self.performance_metrics.client_total_data_received = (
+                self.profiler.get_client_data_received(timestamp_start, timestamp_end)
+            )
 
     def look_for_done_statement(self) -> bool:
         """
-        Look for the DONE statement in the output cells of the cell.
+        Look for the DONE statement in the output cells of the executed cell.
         Returns
         -------
         bool
@@ -217,25 +254,3 @@ class ExecutableCell:
                 logger.info(f"Cell {self.index} DONE statement found!")
                 return True
         return False
-
-    def compute_performance_metrics(self) -> None:
-        """
-        Compute profiling metrics for the cell.
-        """
-        if self.skip_profiling:
-            self.performance_metrics.total_execution_time = 0
-            self.performance_metrics.client_total_data_received = 0
-            self.performance_metrics.client_average_cpu_usage = 0
-            self.performance_metrics.client_average_memory_usage = 0
-            self.performance_metrics.kernel_average_cpu_usage = 0
-            self.performance_metrics.kernel_average_memory_usage = 0
-            return
-
-        timestamp_end: datetime = datetime.now()
-        timestamp_start: datetime = timestamp_end - timedelta(
-            seconds=self.performance_metrics.total_execution_time
-        )
-        self.performance_metrics.client_total_data_received = (
-            self.profiler.get_client_data_received(timestamp_start, timestamp_end)
-        )
-        self.performance_metrics.compute_metrics()

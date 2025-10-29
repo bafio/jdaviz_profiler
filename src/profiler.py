@@ -37,6 +37,7 @@ from src.utils import (
 )
 from src.viz_element import VizElement
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -112,46 +113,49 @@ class Profiler:
 
     @cached_property
     def kernel_id(self) -> str:
+        """
+        Get the kernel id from the kernel name.
+         Returns
+        -------
+        str
+            The kernel id.
+        """
         return self.jupyterlab_helper.get_kernel_id_from_name(self.kernel_name)
 
     def run_notebook(self) -> None:
+        """
+        Run the notebook profiling process.
+        """
+        logger.info("Starting profiling...")
         self.setup_profiler()
-
         self.setup_web_driver()
-
         self.go_to_notebook_url()
-
         self.setup_network_throttling()
-
         self.apply_custom_settings_to_ui()
-
-        # Wait a bit to ensure the page is fully loaded
-        explicit_wait(5)
-
+        explicit_wait(5)  # Wait a bit to ensure the page is fully loaded
         self.build_executable_cells_from_ui()
-
         self.execute_notebook_cells()
-
-        # Compute performance metrics
         self.performance_metrics.compute_metrics()
-
-        # Log the performance metrics
         logger.info(str(self.performance_metrics))
-
-        # save the performance metrics to a csv file
         self.save_performance_metrics_to_csv()
-
         logger.info("Profiling completed.")
 
     def setup_profiler(self) -> None:
+        """
+        Set up the profiler by reading the notebook and extracting relevant information.
+        """
+        # Read the notebook file
         nb: NotebookNode = nb_read(self.nb_input_path, NO_CONVERT)
+        # Extract cell indexes for skip_profiling and wait_for_viz tags
         self.skip_profiling_cell_indexes = frozenset(
             get_notebook_cell_indexes_for_tag(nb, self.SKIP_PROFILING_CELL_TAG)
         )
         self.wait_for_viz_cell_indexes = frozenset(
             get_notebook_cell_indexes_for_tag(nb, self.WAIT_FOR_VIZ_CELL_TAG)
         )
+        # Extract notebook parameters
         self.nb_params_dict = get_notebook_parameters(nb, self.PARAMETERS_CELL_TAG)
+        # Set total cells in performance metrics
         self.performance_metrics.total_cells = len(nb.cells)
 
     def setup_web_driver(self) -> None:
@@ -175,6 +179,9 @@ class Profiler:
         )
 
     def go_to_notebook_url(self) -> None:
+        """
+        Navigate to the notebook URL and wait for it to load.
+        """
         # Navigate to the notebook URL
         url: str = self.jupyterlab_helper.get_notebook_url(self.nb_input_path)
         logger.info(f"Navigating to {url}")
@@ -184,9 +191,14 @@ class Profiler:
         self.wait_for_notebook_to_load()
 
     def setup_network_throttling(self) -> None:
+        """
+        Set up network throttling if the parameter is specified in the
+        notebook parameters.
+        """
         if not self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM):
             logger.debug(
-                "No network throttling parameter found, hence no network throttling applied"
+                "No network throttling parameter found, "
+                "hence no network throttling applied"
             )
             return
         # If ui_network_throttling_value is not None, set up the network throttling
@@ -203,6 +215,9 @@ class Profiler:
         )
 
     def apply_custom_settings_to_ui(self) -> None:
+        """
+        Apply custom settings to the notebook UI such as viewport size and CSS styles.
+        """
         # Apply custom viewport size
         self.driver.set_window_size(*self.VIEWPORT_SIZE.values())
         logger.debug(f"Page viewport set to {self.VIEWPORT_SIZE}.")
@@ -225,8 +240,10 @@ class Profiler:
             By.CSS_SELECTOR, self.NB_CELLS_SELECTOR
         )
 
+        # Ensure the number of collected cells matches the expected total cells
         assert len(nb_ui_cells) == self.performance_metrics.total_cells
 
+        # Build ExecutableCell instances for each code cell
         self.executable_cells = tuple(
             ExecutableCell(
                 cell=nb_ui_cell,
@@ -243,17 +260,23 @@ class Profiler:
         )
 
     def execute_notebook_cells(self) -> None:
-        # Start profiling
+        """
+        Loop through and execute each notebook cell, collecting performance metrics.
+        """
         logger.info("Executing notebook cells.")
 
-        # Execute each cell and wait for outputs
+        # Execute each cell and collect metrics
         for ec in self.executable_cells:
+            # Execute the cell
             ec.execute()
             logging.info(
                 f"Cell execution: {ec.performance_metrics.execution_status.value}"
             )
+            # Collect metrics from the executed cell
             self.collect_executable_cell_metrics(ec)
 
+            # If the cell execution did not complete successfully,
+            # stop further execution
             if ec.performance_metrics.execution_status != CellExecutionStatus.COMPLETED:
                 break
 
@@ -261,7 +284,16 @@ class Profiler:
             explicit_wait(2)
 
     def collect_executable_cell_metrics(self, executable_cell: ExecutableCell) -> None:
+        """
+        Collect performance metrics from an executed cell and update the
+        notebook performance metrics.
+        Parameters
+        ----------
+        executable_cell : ExecutableCell
+            The executed cell to collect metrics from.
+        """
         self.performance_metrics.executed_cells += 1
+        # If the cell is marked to skip profiling, do not collect its metrics
         if executable_cell.skip_profiling:
             return
         self.performance_metrics.profiled_cells += 1
@@ -271,6 +303,7 @@ class Profiler:
         self.performance_metrics.client_total_data_received += (
             executable_cell.performance_metrics.client_total_data_received
         )
+        # Append source-metric combinations to the corresponding lists
         for s, m in self.performance_metrics.SOURCE_METRIC_COMBO:
             getattr(self.performance_metrics, f"{s}_average_{m}_usage_list").append(
                 getattr(executable_cell.performance_metrics, f"{s}_average_{m}_usage")
@@ -280,17 +313,21 @@ class Profiler:
         """
         Save the profiling metrics to a CSV file.
         """
+        # If no metrics directory path is provided, do not save metrics
+        if self.metrics_dir_path is None:
+            logger.debug("Not saving metrics")
+            return
         try:
-            if self.metrics_dir_path is None:
-                logger.debug("Not saving metrics")
-                return
             file_path_name: str = os_path_join(
                 self.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
             )
+            # Set the first column as the notebook path
             notebook_path: dict[str, str] = {"notebook_path": self.nb_input_path}
+            # Append notebook parameters with '_param' suffix
             nb_params_dict: dict[str, Any] = {
                 f"{key}_param": value for key, value in self.nb_params_dict.items()
             }
+            # Append performance metrics with '_metric' suffix
             metrics_dict: dict[str, Any] = {
                 f"{key}_metric": value
                 for key, value in asdict(
@@ -298,12 +335,13 @@ class Profiler:
                     dict_factory=NotebookPerformanceMetrics.dict_factory,
                 ).items()
             }
+            # Combine all into a single OrderedDict for CSV writing
             data: list[OrderedDict[str, Any]] = [
                 OrderedDict(**notebook_path, **nb_params_dict, **metrics_dict)
             ]
-            fieldnames: list[str] = list(data[0].keys())
+            # Write metrics to CSV file
             with open(file_path_name, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer = csv.DictWriter(csvfile, fieldnames=list(data[0].keys()))
                 writer.writeheader()
                 writer.writerows(data)
 
@@ -424,7 +462,21 @@ class Profiler:
             logger.exception(f"An exception occurred during screenshots logging: {e}")
 
     def get_current_kernel_pid(self) -> int:
+        """
+        Get the PID of the current process running on the kernel.
+        Returns
+        -------
+        int
+            The PID of the current process running on the kernel.
+        """
         return self.jupyterlab_helper.get_current_kernel_pid(self.kernel_id)
 
     def get_kernel_usage(self) -> dict[str, Any]:
+        """
+        Get the current resource usage of the kernel.
+        Returns
+        -------
+        dict[str, Any]
+            The current resource usage of the kernel.
+        """
         return self.jupyterlab_helper.get_kernel_usage(self.kernel_id)

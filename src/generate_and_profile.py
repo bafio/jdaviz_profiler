@@ -5,6 +5,7 @@ from src.generate_notebooks import generate_notebooks
 from src.profile_notebook import profile_notebook
 from src.utils import get_logger
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
@@ -51,7 +52,10 @@ def generate_and_profile(
         f"Save Metrics: {save_metrics} -- "
     )
 
+    # Generate notebooks from template
     nb_input_paths: list[str] = generate_notebooks(input_dir_path=input_dir_path)
+
+    # Define optional directories for screenshots and metrics
     screenshots_dir_path: str | None = (
         os_path_join(input_dir_path, "screenshots") if log_screenshots else None
     )
@@ -59,6 +63,7 @@ def generate_and_profile(
         os_path_join(input_dir_path, "metrics") if save_metrics else None
     )
 
+    # Profile each generated notebook
     for nb_input_path in nb_input_paths:
         logger.info(f"Profiling notebook: {nb_input_path}")
 

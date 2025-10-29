@@ -80,12 +80,15 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
     )
 
+    # Parse arguments
     args: argparse.Namespace = parser.parse_args()
 
     # Set logger with given log_level
     set_logger(log_level=args.log_level)
 
+    # Convert args to dict and remove log_level
     args: dict[str, Any] = vars(args)
     del args["log_level"]
 
+    # Profile the notebook with the given arguments
     profile_notebook(**args)

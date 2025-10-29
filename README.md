@@ -1,6 +1,7 @@
 # Jdaviz Profiler
 
-Jdaviz Profiler is a Python toolkit designed to automate the generation and profiling of Jupyter notebooks for the [jdaviz](https://github.com/spacetelescope/jdaviz) visualization suite. It enables users to systematically test and benchmark jdaviz’s Imviz plugin under a variety of parameter combinations, such as image size, number of images, viewport size, and more.
+Jdaviz Profiler is a Python toolkit designed to automate the generation and profiling of Jupyter notebooks for the [jdaviz](https://github.com/spacetelescope/jdaviz) visualization suite.
+It enables users to systematically test and benchmark jdaviz’s Imviz plugin under a variety of parameter combinations, such as image size, number of images, viewport size, and more.
 
 
 ## Features
@@ -21,12 +22,14 @@ Each parameter in the params.json file must have a corresponding placeholder in 
 
 The generated parameterized notebooks will be saved in the `<usecase path>/notebooks` directory.
 
-An example of how to structure a new `<usecase>`, and the `template.ipynb` and `params.json` files, is provided in this repository in `imviz_images`.
+An example of how to structure a new `<usecase>` (along with `template.ipynb` and `params.json` files) is provided in this repository in `imviz_images`.
 
 ### Notebook Profiling:
 
 Uses Selenium to launch and interact with JupyterLab, executing each notebook cell and recording performance metrics.
-Optionally, if a cell is tagged with `skip_profiling`, the performance metrics during the execution of that cell will not be collected.
+Optionally, if a cell is tagged with:
+- `skip_profiling`, the performance metrics during the execution of that cell will not be collected.
+- `wait_for_viz`, the profiler will wait after cell execution for Imviz to be stable (i.e. all images loaded and rendered) before proceeding to the next cell. This is useful for cells that load images into Imviz, ensuring accurate profiling of rendering times.
 
 ### Session Management:
 
@@ -42,6 +45,7 @@ Easily add new parameters or modify the template to test different scenarios, as
 1. **Parameter Setup**: Define the parameters and their possible values in `params.json`.
 2. **Notebook Generation**: Run the notebook generator to create all combinations of notebooks in the output directory.
 3. **Profiling**: Use the profiler to execute each notebook cell in a JupyterLab instance, collecting timing and output data for each cell.
+4. **Results**: The profiling results can be saved in a structured format file (CSV) for analysis.
 
 
 ## Installation
@@ -54,26 +58,26 @@ pip install -e .
 
 Python 3.12 or later is supported.
 
-
 ### Pre-commit hook
 
 To install the pre-commit hook, simply run:
 ```bash
+pip install ruff pre-commit
 pre-commit install
 ```
 
 
 ## Usage
 
-- Generate notebooks:
+- Generate all possible notebooks from a usecase:
     ```bash
     python notebooks_generator.py --input_dir_path <usecase path>
     ```
-- Profile notebooks:
+- Profile a specific notebook:
     ```bash
     python notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
     ```
-- Or run both steps together:
+- Generate all possible notebooks from a usecase and profile all of them:
     ```bash
     python generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
     ```
@@ -87,8 +91,6 @@ pre-commit install
 - `chromedriver-py`
 - `requests`
 - `nbformat`
-- `ruff`
-- `pre-commit`
 
 
 ## License

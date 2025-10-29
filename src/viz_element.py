@@ -10,6 +10,7 @@ from src.utils import explicit_wait, get_logger
 if TYPE_CHECKING:
     from .profiler import Profiler
 
+# Initialize logger
 logger: logging.Logger = get_logger()
 
 
