@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, ClassVar
 
 
@@ -79,7 +79,7 @@ class PerformanceMetrics:
         return " ".join(str_list)
 
 
-class CellExecutionStatus(Enum):
+class CellExecutionStatus(StrEnum):
     """
     Represents the various possible statuses of a notebook cell execution process.
     """
@@ -101,7 +101,7 @@ class CellPerformanceMetrics(PerformanceMetrics):
     def __str__(self) -> str:
         return (
             f"Cell {self.cell_index}: "
-            f"Execution: {self.execution_status.value} "
+            f"Execution: {self.execution_status} "
             f"{super().__str__()}"
         )
 

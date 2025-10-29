@@ -269,9 +269,7 @@ class Profiler:
         for ec in self.executable_cells:
             # Execute the cell
             ec.execute()
-            logging.info(
-                f"Cell execution: {ec.performance_metrics.execution_status.value}"
-            )
+            logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")
             # Collect metrics from the executed cell
             self.collect_executable_cell_metrics(ec)
 
