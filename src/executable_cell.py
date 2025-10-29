@@ -85,7 +85,7 @@ class ExecutableCell:
                 first_iter = not first_iter and self.capture_metrics(start_time)
 
                 # Loop exit check: check for timeout
-                if _elapsed_time := elapsed_time(start_time) > self.max_wait_time:
+                if (_elapsed_time := elapsed_time(start_time)) > self.max_wait_time:
                     self.performance_metrics.execution_status = (
                         CellExecutionStatus.TIMED_OUT
                     )
@@ -111,8 +111,7 @@ class ExecutableCell:
 
                 # Check if the DONE statement is present in the cell result,
                 # only if not yet encountered
-                done_found = done_found or self.look_for_done_statement()
-                if not done_found:
+                if not (done_found := done_found or self.done_statement_is_present()):
                     logger.debug(f"Cell {self.index} DONE statement not found yet...")
                     continue
 
@@ -223,7 +222,7 @@ class ExecutableCell:
                 self.profiler.get_client_data_received(timestamp_start, timestamp_end)
             )
 
-    def look_for_done_statement(self) -> bool:
+    def done_statement_is_present(self) -> bool:
         """
         Look for the DONE statement in the output cells of the executed cell.
         Returns

@@ -91,11 +91,10 @@ def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
         If the JSON file is empty or improperly formatted.
     """
     with open(file_path, "r") as f:
-        data: dict = json.loads(f.read())
-    if not data:
-        msg: str = f"No data found in {file_path}"
-        raise ValueError(msg)
-    return data
+        if not (data := json.loads(f.read())):
+            msg: str = f"No data found in {file_path}"
+            raise ValueError(msg)
+        return data
 
 
 def parse_assignments(src: str) -> OrderedDict[str, Any]:
@@ -173,8 +172,7 @@ def get_notebook_cell_indexes_for_tag(
     cell_indexes: list[int] = []
     for cell_index, cell in enumerate(notebook.cells, 1):
         # Get the nb cell tagged with the specified cell_tag
-        tags: list[str] = cell.metadata.get("tags", [])
-        if cell_tag in tags:
+        if cell_tag in cell.metadata.get("tags", []):
             cell_indexes.append(cell_index)
     return cell_indexes
 
@@ -194,8 +192,7 @@ def get_notebook_parameters(
     """
     for cell in notebook.cells:
         # Get the nb cell tagged with the specified cell_tag
-        tags: list[str] = cell.metadata.get("tags", [])
-        if cell_tag in tags:
+        if cell_tag in cell.metadata.get("tags", []):
             cell_source: str = cell.source or ""
             return parse_assignments(cell_source)
     return OrderedDict()

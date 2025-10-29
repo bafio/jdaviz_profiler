@@ -24,6 +24,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from urllib3.exceptions import ReadTimeoutError
 
 from src.executable_cell import ExecutableCell
 from src.jupyterlab_helper import JupyterLabHelper
@@ -402,7 +403,12 @@ class Profiler:
             The total data received in MB.
         """
         data_received: float = 0
-        for entry in self.driver.get_log("performance"):
+        try:
+            performance_entries: dict[str, Any] = self.driver.get_log("performance")
+        except ReadTimeoutError:
+            logger.warning("ReadTimeoutError when getting performance logs.")
+            return data_received
+        for entry in performance_entries:
             timestamp_entry: datetime = datetime.fromtimestamp(
                 entry["timestamp"] / 1000
             )

@@ -47,8 +47,7 @@ class NotebookGenerator:
         str
             The modified source code with the statement added at the end.
         """
-        lines = cell_source.splitlines()
-        if lines and lines[-1] != statement:
+        if (lines := cell_source.splitlines()) and lines[-1] != statement:
             lines.append(statement)
         cell_source = linesep.join(lines)
         return cell_source
@@ -100,8 +99,7 @@ class NotebookGenerator:
         param_cell_found: bool = False
         for cell in notebook.cells:
             # Get the notebook cell tagged with the specified `PARAMS_CELL_TAG`
-            tags: list[str] = cell.metadata.get("tags", [])
-            if self.PARAMS_CELL_TAG in tags:
+            if self.PARAMS_CELL_TAG in cell.metadata.get("tags", []):
                 param_cell_found = True
                 if not cell.source:
                     msg: str = (

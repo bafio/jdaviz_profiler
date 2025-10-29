@@ -63,9 +63,12 @@ def generate_and_profile(
         os_path_join(input_dir_path, "metrics") if save_metrics else None
     )
 
+    nb_input_paths_len: int = len(nb_input_paths)
     # Profile each generated notebook
-    for nb_input_path in nb_input_paths:
-        logger.info(f"Profiling notebook: {nb_input_path}")
+    for i, nb_input_path in enumerate(nb_input_paths, 1):
+        logger.info(
+            f"Profiling notebook {i} out of {nb_input_paths_len}: {nb_input_path}"
+        )
 
         profile_notebook(
             url=url,
