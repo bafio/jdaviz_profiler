@@ -10,7 +10,7 @@ from nbformat import NotebookNode
 
 KILOBYTE: int = 1024
 MEGABYTE: int = 1024 * KILOBYTE
-LOGGER_NAME = "JDAVIZ_PROFILER"
+LOGGER_NAME = "jdaviz_profiler"
 
 
 def set_logger(log_level: str) -> None:
@@ -27,11 +27,12 @@ def set_logger(log_level: str) -> None:
     console_handler: logging.StreamHandler = logging.StreamHandler()
     console_handler.setFormatter(
         logging.Formatter(
-            "%(asctime)s [[%(name)s %(levelname)8s]] --- "
-            "%(module)s:%(funcName)s@%(lineno)d \n ->> %(message)s"
+            "%(asctime)s [%(levelname)s] %(name)s//%(module)s:%(funcName)s@%(lineno)d "
+            "-->> %(message)s"
         )
     )
     _logger.addHandler(console_handler)
+    _logger.propagate = False
 
 
 def get_logger() -> logging.Logger:
