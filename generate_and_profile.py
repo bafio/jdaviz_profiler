@@ -46,10 +46,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--headless",
         help="Whether to run in headless mode (default: False).",
-        required=False,
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=False,
-        choices=[True, False],
     )
     parser.add_argument(
         "--max_wait_time",
@@ -61,18 +59,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_screenshots",
         help="Whether to log screenshots or not (default: False).",
-        required=False,
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=False,
-        choices=[True, False],
     )
     parser.add_argument(
         "--save_metrics",
         help="Whether to save profiling metrics to a CSV file (default: False).",
-        required=False,
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=False,
-        choices=[True, False],
     )
     parser.add_argument(
         "--log_level",

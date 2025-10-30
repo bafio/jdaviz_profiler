@@ -43,10 +43,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--headless",
         help="Whether to run in headless mode (default: False).",
-        required=False,
-        type=bool,
+        action=argparse.BooleanOptionalAction,
         default=False,
-        choices=[True, False],
     )
     parser.add_argument(
         "--max_wait_time",
