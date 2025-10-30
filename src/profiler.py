@@ -24,6 +24,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 from urllib3.exceptions import ReadTimeoutError
 
 from src.executable_cell import ExecutableCell
@@ -135,7 +137,8 @@ class Profiler:
         self.apply_custom_settings_to_ui()
         explicit_wait(5)  # Wait a bit to ensure the page is fully loaded
         self.build_executable_cells_from_ui()
-        self.execute_notebook_cells()
+        with logging_redirect_tqdm([logger]):
+            self.execute_notebook_cells()
         self.performance_metrics.compute_metrics()
         logger.info(str(self.performance_metrics))
         self.save_performance_metrics_to_csv()
@@ -267,7 +270,12 @@ class Profiler:
         logger.info("Executing notebook cells.")
 
         # Execute each cell and collect metrics
-        for ec in self.executable_cells:
+        for ec in tqdm(
+            self.executable_cells,
+            desc="Notebook Cells Execution Progress",
+            position=1,
+            leave=False,
+        ):
             # Execute the cell
             ec.execute()
             logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")

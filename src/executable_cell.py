@@ -9,6 +9,7 @@ import psutil
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
+from tqdm import tqdm
 
 from src.performance_metrics import CellExecutionStatus, CellPerformanceMetrics
 from src.utils import elapsed_time, explicit_wait, get_logger
@@ -78,9 +79,18 @@ class ExecutableCell:
             # Set initial execution status to IN_PROGRESS
             self.performance_metrics.execution_status = CellExecutionStatus.IN_PROGRESS
 
+            # Set up the progress bar for cell execution
+            progress_bar = tqdm(
+                total=self.max_wait_time,
+                desc=f"Cell {self.index} Timeout Progress",
+                leave=False,
+                position=0,
+            )
+
             # Used to skip the first metrics capture
             first_iter: bool | None = True
             while True:
+                while_elapsed_time: float = elapsed_time()
                 # Capture metrics after the first iteration
                 first_iter = not first_iter and self.capture_metrics(start_time)
 
@@ -108,6 +118,9 @@ class ExecutableCell:
 
                 # Wait a bit before checking again
                 explicit_wait(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+                # Update progress bar
+                progress_bar.update(round(elapsed_time(while_elapsed_time)))
+                while_elapsed_time = elapsed_time()
 
                 # Check if the DONE statement is present in the cell result,
                 # only if not yet encountered
@@ -138,6 +151,9 @@ class ExecutableCell:
                     logger.debug("Looking for the viz element in the page...")
                     self.profiler.detect_viz_element()
 
+                # Update progress bar
+                progress_bar.update(round(elapsed_time(while_elapsed_time)))
+
                 # Loop exit check: if the viz is stable, we are done
                 if viz_is_stable:
                     logger.debug(
@@ -147,6 +163,14 @@ class ExecutableCell:
                         CellExecutionStatus.COMPLETED
                     )
                     break
+
+            # Finalize progress bar
+            steps = 10
+            step = (progress_bar.total - progress_bar.n) / steps
+            for _ in range(steps):
+                explicit_wait(0.05)
+                progress_bar.update(step)
+            progress_bar.close()
 
             # Capture metrics one last time after loop exit
             self.capture_metrics(start_time)
@@ -221,6 +245,7 @@ class ExecutableCell:
             self.performance_metrics.client_total_data_received = (
                 self.profiler.get_client_data_received(timestamp_start, timestamp_end)
             )
+        logger.debug(f"Cell {self.index} metrics captured")
 
     def done_statement_is_present(self) -> bool:
         """

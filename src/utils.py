@@ -13,25 +13,34 @@ MEGABYTE: int = 1024 * KILOBYTE
 LOGGER_NAME = "jdaviz_profiler"
 
 
-def set_logger(log_level: str) -> None:
+def set_logger(log_level: str = "INFO", log_file: str | None = None) -> None:
     """
     Set up the logger with the specified log level.
     Parameters
     ----------
     log_level : str
         The logging level (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
+        Default is 'INFO'.
+    log_file : str | None
+        The path to the log file. If None, logs will only be printed to console.
+        Default is None.
     """
     # Configure logger
+    logging_formatter: logging.Formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s/%(module)s:%(funcName)s@%(lineno)d "
+        "-->> %(message)s"
+    )
     _logger: logging.Logger = logging.getLogger(LOGGER_NAME)
     _logger.setLevel(log_level)
+    #  Add console handler
     console_handler: logging.StreamHandler = logging.StreamHandler()
-    console_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s//%(module)s:%(funcName)s@%(lineno)d "
-            "-->> %(message)s"
-        )
-    )
+    console_handler.setFormatter(logging_formatter)
     _logger.addHandler(console_handler)
+    if log_file:
+        # Add file handler
+        file_handler: logging.FileHandler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging_formatter)
+        _logger.addHandler(file_handler)
     _logger.propagate = False
 
 

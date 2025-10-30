@@ -69,6 +69,13 @@ if __name__ == "__main__":
         default=False,
     )
     parser.add_argument(
+        "--log_file",
+        help="Path to the log file.",
+        required=False,
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--log_level",
         help="Set the logging level (default: INFO).",
         required=False,
@@ -80,12 +87,13 @@ if __name__ == "__main__":
     # Parse arguments
     args: argparse.Namespace = parser.parse_args()
 
-    # Set logger with given log_level
-    set_logger(log_level=args.log_level)
+    # Set logger with given log_level and log_file
+    set_logger(log_level=args.log_level, log_file=args.log_file)
 
-    # Convert args to dictionary and remove log_level
+    # Convert args to dictionary and remove log_level and log_file
     args: dict[str, Any] = vars(args)
     del args["log_level"]
+    del args["log_file"]
 
     # Generate and profile notebooks with the given arguments
     generate_and_profile(**args)

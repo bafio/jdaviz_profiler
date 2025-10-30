@@ -80,28 +80,22 @@ class JupyterLabHelper:
         """
         try:
             # Get a list of all running sessions
-            sessions_url: str = f"{self.url}/api/sessions"
             response: requests.Response = requests.get(
-                sessions_url, headers=self.headers
+                f"{self.url}/api/sessions", headers=self.headers
             )
             response.raise_for_status()
             sessions: list[dict[str, Any]] = response.json()
-
             if not sessions:
                 logger.info("No active sessions found.")
                 return
-
             logger.info(f"Found {len(sessions)} active sessions. Shutting them down...")
-
             # Shut down each session
             for session in sessions:
                 session_id: str = session["id"]
-                shutdown_url: str = f"{self.url}/api/sessions/{session_id}"
                 shutdown_response: requests.Response = requests.delete(
-                    shutdown_url, headers=self.headers
+                    f"{self.url}/api/sessions/{session_id}", headers=self.headers
                 )
                 shutdown_response.raise_for_status()
-
                 # Print a status message based on the session type
                 if session.get("kernel"):
                     logger.info(
@@ -115,7 +109,6 @@ class JupyterLabHelper:
                     )
                 else:
                     logger.info(f"Shut down unknown session type (ID: {session_id})")
-
         except RequestException as e:
             logger.exception(f"Error communicating with JupyterLab server: {e}")
             raise e
@@ -143,21 +136,16 @@ class JupyterLabHelper:
         """
         try:
             # Get the list of all kernels
-            kernels_url: str = f"{self.url}/api/kernels"
             response: requests.Response = requests.get(
-                kernels_url, headers=self.headers
+                f"{self.url}/api/kernels", headers=self.headers
             )
             response.raise_for_status()
-            kernels: list[dict[str, Any]] = response.json()
-
             # Find the kernel ID for the given kernel name
-            for kernel in kernels:
+            for kernel in response.json():
                 if kernel["name"] == kernel_name:
                     return kernel["id"]
-
             logger.warning(f"No active kernel found for kernel name: {kernel_name}.")
             return None
-
         except RequestException as e:
             logger.exception(f"Error communicating with JupyterLab server: {e}")
             raise e
@@ -182,14 +170,11 @@ class JupyterLabHelper:
             return
         try:
             # Restart the kernel
-            restart_url: str = f"{self.url}/api/kernels/{kernel_id}/restart"
             restart_response: requests.Response = requests.post(
-                restart_url, headers=self.headers
+                f"{self.url}/api/kernels/{kernel_id}/restart", headers=self.headers
             )
             restart_response.raise_for_status()
-
             logger.info(f"Kernel {kernel_id} restarted successfully.")
-
         except RequestException as e:
             logger.exception(f"Error communicating with JupyterLab server: {e}")
             raise e
@@ -218,23 +203,17 @@ class JupyterLabHelper:
             notebook_filename: str = self.get_notebook_filename(notebook_path)
             upload_url: str = f"{self.url}/api/contents/{notebook_filename}"
             logger.info(f"Uploading notebook to {upload_url}")
-
             with open(notebook_path, "r", encoding="utf-8") as nb_file:
-                notebook_content: dict[str, Any] = json.load(nb_file)
-
-            payload: dict[str, Any] = {
-                "content": notebook_content,
-                "type": "notebook",
-                "format": "json",
-            }
-
+                payload: dict[str, Any] = {
+                    "content": json.load(nb_file),
+                    "type": "notebook",
+                    "format": "json",
+                }
             response: requests.Response = requests.put(
                 upload_url, headers=self.headers, json=payload
             )
             response.raise_for_status()
-
             logger.info(f"Notebook uploaded successfully to {upload_url}")
-
         except FileNotFoundError as e:
             logger.exception(f"Notebook file not found: {notebook_path}")
             raise e
@@ -262,14 +241,11 @@ class JupyterLabHelper:
         try:
             delete_url: str = f"{self.url}/api/contents/{notebook_filename}"
             logger.info(f"Deleting notebook at {delete_url}")
-
             response: requests.Response = requests.delete(
                 delete_url, headers=self.headers
             )
             response.raise_for_status()
-
             logger.info(f"Notebook deleted successfully from {delete_url}")
-
         except RequestException as e:
             logger.exception(f"Error deleting notebook: {e}")
             raise e
@@ -297,19 +273,12 @@ class JupyterLabHelper:
         """
         try:
             # Get the usage info for a specific kernel
-            kernel_usage_url: str = (
-                f"{self.url}/api/metrics/v1/kernel_usage/get_usage/{kernel_id}"
-            )
             response: requests.Response = requests.get(
-                kernel_usage_url, headers=self.headers
+                f"{self.url}/api/metrics/v1/kernel_usage/get_usage/{kernel_id}",
+                headers=self.headers,
             )
             response.raise_for_status()
-            content: dict[str, Any] = response.json().get("content", {})
-
-            logger.debug(f"Kernel usage info: {content}")
-
-            return content
-
+            return response.json().get("content", {})
         except RequestException as e:
             logger.exception(f"Error communicating with JupyterLab server: {e}")
             raise e
