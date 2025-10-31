@@ -315,8 +315,11 @@ class Profiler:
         )
         # Append source-metric combinations to the corresponding lists
         for s, m in self.metrics.SOURCE_METRIC_COMBO:
-            getattr(self.metrics, f"{s}_average_{m}_usage_list").append(
-                getattr(executable_cell.metrics, f"{s}_average_{m}_usage")
+            getattr(self.metrics, f"{s}_{m}_list").append(
+                # getattr(executable_cell.metrics, f"{s}_min_{m}")
+                getattr(executable_cell.metrics, f"{s}_mean_{m}")
+                # getattr(executable_cell.metrics, f"{s}_mode_{m}")
+                # getattr(executable_cell.metrics, f"{s}_max_{m}")
             )
 
     def save_metrics_to_csv(self) -> None:

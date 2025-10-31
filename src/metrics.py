@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import StrEnum, unique
+from statistics import mean, mode
 from typing import Any, ClassVar
 
 
@@ -10,18 +11,26 @@ class Metrics:
 
     total_execution_time: float = 0
     client_total_data_received: float = 0
-    client_average_cpu_usage: float = 0
-    client_average_memory_usage: float = 0
-    client_average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
-    client_average_memory_usage_list: list[float] = field(
-        default_factory=list, repr=False
-    )
-    kernel_average_cpu_usage: float = 0
-    kernel_average_memory_usage: float = 0
-    kernel_average_cpu_usage_list: list[float] = field(default_factory=list, repr=False)
-    kernel_average_memory_usage_list: list[float] = field(
-        default_factory=list, repr=False
-    )
+    client_min_cpu: float = 0
+    client_mean_cpu: float = 0
+    client_mode_cpu: float = 0
+    client_max_cpu: float = 0
+    client_cpu_list: list[float] = field(default_factory=list, repr=False)
+    client_min_memory: float = 0
+    client_mean_memory: float = 0
+    client_mode_memory: float = 0
+    client_max_memory: float = 0
+    client_memory_list: list[float] = field(default_factory=list, repr=False)
+    kernel_min_cpu: float = 0
+    kernel_mean_cpu: float = 0
+    kernel_mode_cpu: float = 0
+    kernel_max_cpu: float = 0
+    kernel_cpu_list: list[float] = field(default_factory=list, repr=False)
+    kernel_min_memory: float = 0
+    kernel_mean_memory: float = 0
+    kernel_mode_memory: float = 0
+    kernel_max_memory: float = 0
+    kernel_memory_list: list[float] = field(default_factory=list, repr=False)
 
     # Define combinations of sources and metrics
     # like (client,cpu), (kernel,memory), etc.
@@ -40,8 +49,7 @@ class Metrics:
     # Keys to exclude from the custom dict factory
     # these are the lists used to compute averages
     EXCLUDE_KEYS: ClassVar[tuple[str, ...]] = tuple(
-        f"{source}_average_{metric}_usage_list"
-        for source, metric in SOURCE_METRIC_COMBO
+        f"{source}_{metric}_list" for source, metric in SOURCE_METRIC_COMBO
     )
 
     @staticmethod
@@ -65,15 +73,21 @@ class Metrics:
     def compute(self) -> None:
         """Compute the average cpu and memory usage from the recorded lists."""
         for s, m in self.SOURCE_METRIC_COMBO:
-            if values := getattr(self, f"{s}_average_{m}_usage_list"):
-                setattr(self, f"{s}_average_{m}_usage", sum(values) / len(values))
+            if values := getattr(self, f"{s}_{m}_list"):
+                setattr(self, f"{s}_min_{m}", min(values))
+                setattr(self, f"{s}_mean_{m}", mean(values))
+                setattr(self, f"{s}_mode_{m}", mode(values))
+                setattr(self, f"{s}_max_{m}", max(values))
 
     def __str__(self) -> str:
         str_list = [
             f"total execution time: {self.total_execution_time:.2f} seconds.",
             f"client total data received: {self.client_total_data_received:.2f} MB.",
         ] + [
-            f"{s} average {m} usage: {getattr(self, f'{s}_average_{m}_usage'):.2f}%."
+            f"{s} min {m} usage: {getattr(self, f'{s}_min_{m}'):.2f}%."
+            f"{s} mean {m} usage: {getattr(self, f'{s}_mean_{m}'):.2f}%."
+            f"{s} mode {m} usage: {getattr(self, f'{s}_mode_{m}'):.2f}%."
+            f"{s} max {m} usage: {getattr(self, f'{s}_max_{m}'):.2f}%."
             for s, m in self.SOURCE_METRIC_COMBO
         ]
         return " ".join(str_list)
@@ -129,6 +143,6 @@ class NotebookMetrics(Metrics):
         return (
             f"Notebook with {self.total_cells} cells, "
             f"of which {self.executed_cells} were correctly executed and "
-            f"{self.profiled_cells} were profiled."
+            f"{self.profiled_cells} were profiled. "
             f"{super().__str__()}"
         )

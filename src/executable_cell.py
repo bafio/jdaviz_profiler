@@ -207,24 +207,20 @@ class ExecutableCell:
         self.metrics.total_execution_time = elapsed_time(self.execution_start_time)
 
         # Capture client CPU usage
-        self.metrics.client_average_cpu_usage_list.append(
+        self.metrics.client_cpu_list.append(
             psutil.cpu_percent(interval=self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
         )
 
         # Capture client memory usage
-        self.metrics.client_average_memory_usage_list.append(
-            psutil.virtual_memory().percent
-        )
+        self.metrics.client_memory_list.append(psutil.virtual_memory().percent)
 
         # Get kernel usage metrics only if present
         kernel_usage: dict[str, Any] = self.profiler.get_kernel_usage()
         if "kernel_cpu" in kernel_usage and "host_virtual_memory" in kernel_usage:
             # Capture kernel CPU usage
-            self.metrics.kernel_average_cpu_usage_list.append(
-                kernel_usage["kernel_cpu"]
-            )
+            self.metrics.kernel_cpu_list.append(kernel_usage["kernel_cpu"])
             # Capture kernel memory usage
-            self.metrics.kernel_average_memory_usage_list.append(
+            self.metrics.kernel_memory_list.append(
                 kernel_usage["host_virtual_memory"]["percent"]
             )
         else:
