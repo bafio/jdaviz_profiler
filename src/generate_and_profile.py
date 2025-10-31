@@ -53,7 +53,7 @@ def generate_and_profile(
         f"Headless: {headless} -- "
         f"Max Wait Time: {max_wait_time} -- "
         f"Log Screenshots: {log_screenshots} -- "
-        f"Save Metrics: {save_metrics} -- "
+        f"Save Metrics: {save_metrics}"
     )
 
     # Generate notebooks from template

@@ -28,7 +28,7 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
         If the template.ipynb does not exist or the params.json file does not exist.
     """
     logger.debug(
-        f"Starting notebook generation with Input Directory Path: {input_dir_path} -- "
+        f"Starting notebook generation with Input Directory Path: {input_dir_path}"
     )
 
     # Resolve the template.ipynb file path, params file path, and output directory path
@@ -91,7 +91,7 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
 
     logger.info(
         "Notebooks generation completed. "
-        f"Total notebooks generated: {len(output_paths)}"
+        f"Total notebooks generated: {len(output_paths)}."
     )
 
     return output_paths

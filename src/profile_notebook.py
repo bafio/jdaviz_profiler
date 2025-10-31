@@ -62,7 +62,7 @@ def profile_notebook(
         f"Headless: {headless} -- "
         f"Max Wait Time: {max_wait_time} -- "
         f"Screenshots Dir Path: {screenshots_dir_path} -- "
-        f"Metrics Dir Path: {metrics_dir_path} -- "
+        f"Metrics Dir Path: {metrics_dir_path}"
     )
 
     if screenshots_dir_path:

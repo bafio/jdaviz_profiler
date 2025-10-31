@@ -1,11 +1,11 @@
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import StrEnum, unique
 from typing import Any, ClassVar
 
 
 @dataclass
-class PerformanceMetrics:
+class Metrics:
     """Class representing performance metrics."""
 
     total_execution_time: float = 0
@@ -58,11 +58,11 @@ class PerformanceMetrics:
             {
                 k: round(v, 2) if isinstance(v, float) else v
                 for (k, v) in data
-                if k not in PerformanceMetrics.EXCLUDE_KEYS
+                if k not in Metrics.EXCLUDE_KEYS
             }
         )
 
-    def compute_metrics(self) -> None:
+    def compute(self) -> None:
         """Compute the average cpu and memory usage from the recorded lists."""
         for s, m in self.SOURCE_METRIC_COMBO:
             if values := getattr(self, f"{s}_average_{m}_usage_list"):
@@ -79,6 +79,7 @@ class PerformanceMetrics:
         return " ".join(str_list)
 
 
+@unique
 class CellExecutionStatus(StrEnum):
     """
     Represents the various possible statuses of a notebook cell execution process.
@@ -90,9 +91,19 @@ class CellExecutionStatus(StrEnum):
     FAILED = "Failed"
     TIMED_OUT = "Timed Out"
 
+    @property
+    def is_not_final(self) -> bool:
+        """Returns True if the status is not a final state, False otherwise."""
+        return self in {CellExecutionStatus.PENDING, CellExecutionStatus.IN_PROGRESS}
+
+    @property
+    def is_final(self) -> bool:
+        """Returns True if the status is a final state, False otherwise."""
+        return not self.is_not_final
+
 
 @dataclass
-class CellPerformanceMetrics(PerformanceMetrics):
+class CellMetrics(Metrics):
     """Class representing cell performance metrics."""
 
     cell_index: int = 0
@@ -107,7 +118,7 @@ class CellPerformanceMetrics(PerformanceMetrics):
 
 
 @dataclass
-class NotebookPerformanceMetrics(PerformanceMetrics):
+class NotebookMetrics(Metrics):
     """Class representing notebook performance metrics."""
 
     total_cells: int = 0

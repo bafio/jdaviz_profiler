@@ -50,5 +50,5 @@ class VizElement:
 
         # Compare the two screenshots
         screenshots_are_the_same: bool = screenshot_before == screenshot_after
-        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}")
+        logger.debug(f"screenshots_are_the_same: {screenshots_are_the_same}.")
         return screenshots_are_the_same

@@ -30,7 +30,7 @@ from urllib3.exceptions import ReadTimeoutError
 
 from src.executable_cell import ExecutableCell
 from src.jupyterlab_helper import JupyterLabHelper
-from src.performance_metrics import CellExecutionStatus, NotebookPerformanceMetrics
+from src.metrics import CellExecutionStatus, NotebookMetrics
 from src.utils import (
     MEGABYTE,
     explicit_wait,
@@ -72,8 +72,8 @@ class Profiler:
     wait_for_viz_cell_indexes: frozenset = field(
         default_factory=frozenset, repr=False, init=False
     )
-    performance_metrics: NotebookPerformanceMetrics = field(
-        default_factory=NotebookPerformanceMetrics, repr=False, init=False
+    metrics: NotebookMetrics = field(
+        default_factory=NotebookMetrics, repr=False, init=False
     )
 
     # The width and height to set for the browser viewport to make the page really tall
@@ -139,9 +139,9 @@ class Profiler:
         self.build_executable_cells_from_ui()
         with logging_redirect_tqdm([logger]):
             self.execute_notebook_cells()
-        self.performance_metrics.compute_metrics()
-        logger.info(str(self.performance_metrics))
-        self.save_performance_metrics_to_csv()
+        self.metrics.compute()
+        logger.info(str(self.metrics))
+        self.save_metrics_to_csv()
         logger.info("Profiling completed.")
 
     def setup_profiler(self) -> None:
@@ -160,7 +160,7 @@ class Profiler:
         # Extract notebook parameters
         self.nb_params_dict = get_notebook_parameters(nb, self.PARAMETERS_CELL_TAG)
         # Set total cells in performance metrics
-        self.performance_metrics.total_cells = len(nb.cells)
+        self.metrics.total_cells = len(nb.cells)
 
     def setup_web_driver(self) -> None:
         """
@@ -202,7 +202,7 @@ class Profiler:
         if not self.nb_params_dict.get(self.UI_NETWORK_THROTTLING_PARAM):
             logger.debug(
                 "No network throttling parameter found, "
-                "hence no network throttling applied"
+                "hence no network throttling applied."
             )
             return
         # If ui_network_throttling_value is not None, set up the network throttling
@@ -245,7 +245,7 @@ class Profiler:
         )
 
         # Ensure the number of collected cells matches the expected total cells
-        assert len(nb_ui_cells) == self.performance_metrics.total_cells
+        assert len(nb_ui_cells) == self.metrics.total_cells
 
         # Build ExecutableCell instances for each code cell
         self.executable_cells = tuple(
@@ -260,14 +260,14 @@ class Profiler:
             for i, nb_ui_cell in enumerate(nb_ui_cells, 1)
         )
         logger.info(
-            f"Number of executable cells in the notebook: {len(self.executable_cells)}"
+            f"Number of executable cells in the notebook: {len(self.executable_cells)}."
         )
 
     def execute_notebook_cells(self) -> None:
         """
         Loop through and execute each notebook cell, collecting performance metrics.
         """
-        logger.info("Executing notebook cells.")
+        logger.info("Executing notebook cells...")
 
         # Execute each cell and collect metrics
         for ec in tqdm(
@@ -281,13 +281,13 @@ class Profiler:
                 ec.execute()
             except Exception as e:
                 logger.exception(f"Exception while executing cell {ec.index}: {e}")
-            logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")
+            logging.info(f"Cell execution: {ec.metrics.execution_status}")
             # Collect metrics from the executed cell
             self.collect_executable_cell_metrics(ec)
 
             # If the cell execution did not complete successfully,
             # stop further executions
-            if ec.performance_metrics.execution_status != CellExecutionStatus.COMPLETED:
+            if ec.metrics.execution_status != CellExecutionStatus.COMPLETED:
                 break
 
             # Wait a bit to ensure stability before moving to the next cell
@@ -302,30 +302,30 @@ class Profiler:
         executable_cell : ExecutableCell
             The executed cell to collect metrics from.
         """
-        self.performance_metrics.executed_cells += 1
+        self.metrics.executed_cells += 1
         # If the cell is marked to skip profiling, do not collect its metrics
         if executable_cell.skip_profiling:
             return
-        self.performance_metrics.profiled_cells += 1
-        self.performance_metrics.total_execution_time += (
-            executable_cell.performance_metrics.total_execution_time
+        self.metrics.profiled_cells += 1
+        self.metrics.total_execution_time += (
+            executable_cell.metrics.total_execution_time
         )
-        self.performance_metrics.client_total_data_received += (
-            executable_cell.performance_metrics.client_total_data_received
+        self.metrics.client_total_data_received += (
+            executable_cell.metrics.client_total_data_received
         )
         # Append source-metric combinations to the corresponding lists
-        for s, m in self.performance_metrics.SOURCE_METRIC_COMBO:
-            getattr(self.performance_metrics, f"{s}_average_{m}_usage_list").append(
-                getattr(executable_cell.performance_metrics, f"{s}_average_{m}_usage")
+        for s, m in self.metrics.SOURCE_METRIC_COMBO:
+            getattr(self.metrics, f"{s}_average_{m}_usage_list").append(
+                getattr(executable_cell.metrics, f"{s}_average_{m}_usage")
             )
 
-    def save_performance_metrics_to_csv(self) -> None:
+    def save_metrics_to_csv(self) -> None:
         """
         Save the profiling metrics to a CSV file.
         """
         # If no metrics directory path is provided, do not save metrics
         if self.metrics_dir_path is None:
-            logger.debug("Not saving metrics")
+            logger.debug("Not saving metrics.")
             return
         try:
             file_path_name: str = os_path_join(
@@ -341,8 +341,8 @@ class Profiler:
             metrics_dict: dict[str, Any] = {
                 f"{key}_metric": value
                 for key, value in asdict(
-                    self.performance_metrics,
-                    dict_factory=NotebookPerformanceMetrics.dict_factory,
+                    self.metrics,
+                    dict_factory=NotebookMetrics.dict_factory,
                 ).items()
             }
             # Combine all into a single OrderedDict for CSV writing
@@ -376,12 +376,12 @@ class Profiler:
                         (By.CSS_SELECTOR, self.NB_SELECTOR)
                     )
                 )
-                logger.debug("Notebook loaded")
+                logger.debug("Notebook loaded.")
                 return
             except TimeoutException:
                 logger.warning(
                     "Error waiting for notebook to load, "
-                    f"retrying... {attempt + 1}/{max_retries}"
+                    f"retrying... {attempt + 1}/{max_retries}."
                 )
                 # Double the delay for the next attempt
                 retry_delay *= 2
@@ -394,7 +394,7 @@ class Profiler:
         Close the Selenium driver.
         """
         self.driver is not None and hasattr(self.driver, "quit") and self.driver.quit()
-        logger.debug("Driver closed")
+        logger.debug("Driver closed.")
 
     def get_client_data_received(
         self, timestamp_start: datetime, timestamp_end: datetime
@@ -442,7 +442,7 @@ class Profiler:
             self.viz_element: VizElement = VizElement(
                 element=viz_element, profiler=self
             )
-            logger.debug("Viz element detected and assigned")
+            logger.debug("Viz element detected and assigned.")
 
     def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
         """
@@ -456,7 +456,7 @@ class Profiler:
         """
         try:
             if self.screenshots_dir_path is None:
-                logger.debug("Not logging screenshots")
+                logger.debug("Not logging screenshots.")
                 return
 
             # Log screenshots
@@ -470,7 +470,7 @@ class Profiler:
                 # Save first screenshot as PNG
                 Image.open(BytesIO(screenshot)).save(f"{file_path_name}_{i}.png")
 
-            logger.debug("Screenshots logged")
+            logger.debug("Screenshots logged.")
 
         except Exception as e:
             # In case of an exception: log it and move on (do not block!)
