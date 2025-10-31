@@ -276,14 +276,17 @@ class Profiler:
             position=1,
             leave=False,
         ):
-            # Execute the cell
-            ec.execute()
+            try:
+                # Execute the cell
+                ec.execute()
+            except Exception as e:
+                logger.exception(f"Exception while executing cell {ec.index}: {e}")
             logging.info(f"Cell execution: {ec.performance_metrics.execution_status}")
             # Collect metrics from the executed cell
             self.collect_executable_cell_metrics(ec)
 
             # If the cell execution did not complete successfully,
-            # stop further execution
+            # stop further executions
             if ec.performance_metrics.execution_status != CellExecutionStatus.COMPLETED:
                 break
 

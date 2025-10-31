@@ -86,15 +86,15 @@ if __name__ == "__main__":
     )
 
     # Parse arguments
-    args: argparse.Namespace = parser.parse_args()
+    _args: argparse.Namespace = parser.parse_args()
 
     # Set logger with given log_level and log_file
-    set_logger(log_level=args.log_level, log_file=args.log_file)
+    set_logger(log_level=_args.log_level, log_file=_args.log_file)
 
-    # Convert args to dictionary and remove log_level and log_file
-    args: dict[str, Any] = vars(args)
-    del args["log_level"]
-    del args["log_file"]
+    # Convert args into a dictionary, remove log_level and log_file
+    _kwargs: dict[str, Any] = vars(_args)
+    del _kwargs["log_level"]
+    del _kwargs["log_file"]
 
-    # Profile the notebook with the given arguments
-    profile_notebook(**args)
+    # Generate notebooks with the given arguments
+    profile_notebook(**_kwargs)

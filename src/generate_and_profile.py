@@ -1,5 +1,9 @@
 import logging
 from os.path import join as os_path_join
+from typing import Any
+
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from src.generate_notebooks import generate_notebooks
 from src.profile_notebook import profile_notebook
@@ -63,20 +67,26 @@ def generate_and_profile(
         os_path_join(input_dir_path, "metrics") if save_metrics else None
     )
 
-    nb_input_paths_len: int = len(nb_input_paths)
-    # Profile each generated notebook
-    for i, nb_input_path in enumerate(nb_input_paths, 1):
-        logger.info(
-            f"Profiling notebook {i} out of {nb_input_paths_len}: {nb_input_path}"
-        )
+    # Set up the partial arguments for the `profile_notebook` call
+    profile_notebook_kwargs: dict[str, Any] = {
+        "url": url,
+        "token": token,
+        "kernel_name": kernel_name,
+        "headless": headless,
+        "max_wait_time": max_wait_time,
+        "screenshots_dir_path": screenshots_dir_path,
+        "metrics_dir_path": metrics_dir_path,
+    }
+    progress_bar_kwargs: dict[str, Any] = {
+        "iterable": nb_input_paths,
+        "desc": "Profiling Notebooks Progress",
+        "position": 2,
+        "leave": False,
+    }
 
-        profile_notebook(
-            url=url,
-            token=token,
-            kernel_name=kernel_name,
-            nb_input_path=nb_input_path,
-            headless=headless,
-            max_wait_time=max_wait_time,
-            screenshots_dir_path=screenshots_dir_path,
-            metrics_dir_path=metrics_dir_path,
-        )
+    # Profile each generated notebook
+    with logging_redirect_tqdm([logger]):
+        for nb_input_path in tqdm(**progress_bar_kwargs):
+            logger.info(f"Profiling notebook: {nb_input_path}")
+            profile_notebook_kwargs["nb_input_path"] = nb_input_path
+            profile_notebook(**profile_notebook_kwargs)

@@ -62,129 +62,130 @@ class ExecutableCell:
         """
         Execute the cell and collect profiling metrics.
         """
-        try:
-            logger.info(f"Executing cell {self.index}")
+        logger.info(f"Executing cell {self.index}")
 
-            # Initialize variables to track the progress of the cell execution
-            viz_is_stable: bool = False
-            done_found: bool = False
-            start_time: float = elapsed_time()
-            kernel_pid: int = self.profiler.get_current_kernel_pid()
+        # Initialize variables to track the progress of the cell execution
+        done_found: bool = False
+        start_time: float = elapsed_time()
+        kernel_pid: int = self.profiler.get_current_kernel_pid()
 
-            # Click on the cell
-            self.cell.click()
-            # Execute the cell
-            self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
+        # Click on the cell
+        self.cell.click()
+        # Execute the cell
+        self.cell.send_keys(Keys.SHIFT, Keys.ENTER)
 
-            # Set initial execution status to IN_PROGRESS
-            self.performance_metrics.execution_status = CellExecutionStatus.IN_PROGRESS
+        # Set initial execution status to IN_PROGRESS
+        self.performance_metrics.execution_status = CellExecutionStatus.IN_PROGRESS
 
-            # Set up the progress bar for cell execution
-            progress_bar = tqdm(
-                total=self.max_wait_time,
-                desc=f"Cell {self.index} Timeout Progress",
-                leave=False,
-                position=0,
+        # Set up the progress bar for cell execution
+        progress_bar = tqdm(
+            total=self.max_wait_time,
+            desc=f"Cell {self.index} Timeout Progress",
+            leave=False,
+            position=0,
+        )
+
+        # Used to skip the first metrics capture
+        first_iter: bool | None = True
+        continue_loop: bool = True
+        while continue_loop:
+            # Mark the beginning of a loop iteration (for progress bar updates)
+            loop_iteration_start: float = elapsed_time()
+            # Capture metrics after the first iteration
+            first_iter = not first_iter and self.capture_metrics(start_time)
+
+            continue_loop = continue_loop and not self.time_is_expired(start_time)
+
+            continue_loop = continue_loop and not self.kernel_has_restarted(kernel_pid)
+
+            # Wait a bit before checking again
+            continue_loop and explicit_wait(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
+            # Update progress bar
+            continue_loop and progress_bar.update(
+                round(elapsed_time(loop_iteration_start))
+            )
+            # Reset the loop iteration start (for further progress bar updates)
+            loop_iteration_start = elapsed_time()
+
+            # Check if the DONE statement is present in the cell result,
+            # only if not yet encountered
+            if continue_loop and not (
+                done_found := done_found or self.done_statement_is_present()
+            ):
+                logger.debug(f"Cell {self.index} DONE statement not found yet...")
+                continue
+
+            continue_loop = continue_loop and self.need_to_wait_for_viz()
+
+            continue_loop = continue_loop and not self.viz_is_stable()
+
+            # Update progress bar
+            continue_loop and progress_bar.update(
+                round(elapsed_time(loop_iteration_start))
             )
 
-            # Used to skip the first metrics capture
-            first_iter: bool | None = True
-            while True:
-                while_elapsed_time: float = elapsed_time()
-                # Capture metrics after the first iteration
-                first_iter = not first_iter and self.capture_metrics(start_time)
+        # Finalize progress bar
+        steps: int = 10
+        step: float = (progress_bar.total - progress_bar.n) / steps
+        for _ in range(steps):
+            explicit_wait(0.05)
+            progress_bar.update(step)
+        progress_bar.close()
 
-                # Loop exit check: check for timeout
-                if (_elapsed_time := elapsed_time(start_time)) > self.max_wait_time:
-                    self.performance_metrics.execution_status = (
-                        CellExecutionStatus.TIMED_OUT
-                    )
-                    logger.warning(
-                        f"Cell {self.index} execution stopped after "
-                        f"{_elapsed_time} seconds"
-                    )
-                    break
+        # Capture metrics one last time after loop exit
+        self.capture_metrics(start_time)
 
-                # Loop exit check: check if the kernel has restarted
-                if kernel_pid != self.profiler.get_current_kernel_pid():
-                    self.performance_metrics.execution_status = (
-                        CellExecutionStatus.FAILED
-                    )
-                    logger.warning(
-                        f"Cell {self.index} execution has been interrupted due to a "
-                        "kernel restart."
-                    )
-                    break
+        # Compute performance metrics
+        self.performance_metrics.compute_metrics()
 
-                # Wait a bit before checking again
-                explicit_wait(self.WAIT_TIME_BEFORE_OUTPUT_CHECK)
-                # Update progress bar
-                progress_bar.update(round(elapsed_time(while_elapsed_time)))
-                while_elapsed_time = elapsed_time()
+        # Log the performance metrics
+        logger.info(str(self.performance_metrics))
 
-                # Check if the DONE statement is present in the cell result,
-                # only if not yet encountered
-                if not (done_found := done_found or self.done_statement_is_present()):
-                    logger.debug(f"Cell {self.index} DONE statement not found yet...")
-                    continue
-
-                # Loop exit check: if we don't need to wait for viz changes, we are done
-                if not self.wait_for_viz:
-                    logger.debug(
-                        f"Cell {self.index} is not tagged as to wait for viz changes, "
-                        "moving on..."
-                    )
-                    self.performance_metrics.execution_status = (
-                        CellExecutionStatus.COMPLETED
-                    )
-                    break
-
-                logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
-                if self.profiler.viz_element:
-                    # If we have the viz element, check if it's stable
-                    logger.debug(
-                        "We already have the viz element, checking if it's stable..."
-                    )
-                    viz_is_stable = self.profiler.viz_element.is_stable(self.index)
-                else:
-                    # Look for the viz element in the page
-                    logger.debug("Looking for the viz element in the page...")
-                    self.profiler.detect_viz_element()
-
-                # Update progress bar
-                progress_bar.update(round(elapsed_time(while_elapsed_time)))
-
-                # Loop exit check: if the viz is stable, we are done
-                if viz_is_stable:
-                    logger.debug(
-                        f"Cell {self.index} viz element is stable, moving on..."
-                    )
-                    self.performance_metrics.execution_status = (
-                        CellExecutionStatus.COMPLETED
-                    )
-                    break
-
-            # Finalize progress bar
-            steps = 10
-            step = (progress_bar.total - progress_bar.n) / steps
-            for _ in range(steps):
-                explicit_wait(0.05)
-                progress_bar.update(step)
-            progress_bar.close()
-
-            # Capture metrics one last time after loop exit
-            self.capture_metrics(start_time)
-
-            # Compute performance metrics
-            self.performance_metrics.compute_metrics()
-
-            # Log the performance metrics
-            logger.info(str(self.performance_metrics))
-
-        except Exception as e:
-            logger.exception(
-                f"An error occurred while executing cell {self.index}: {e}"
+    def time_is_expired(self, t: float) -> bool:
+        if (_elapsed_time := elapsed_time(t)) > self.max_wait_time:
+            self.performance_metrics.execution_status = CellExecutionStatus.TIMED_OUT
+            logger.warning(
+                f"Cell {self.index} execution stopped after {_elapsed_time} seconds"
             )
+            return True
+        return False
+
+    def kernel_has_restarted(self, kernel_pid: int) -> bool:
+        if kernel_pid != self.profiler.get_current_kernel_pid():
+            self.performance_metrics.execution_status = CellExecutionStatus.FAILED
+            logger.warning(
+                f"Cell {self.index} execution has been interrupted due to a "
+                "kernel restart."
+            )
+            return True
+        return False
+
+    def need_to_wait_for_viz(self) -> bool:
+        if self.wait_for_viz:
+            logger.debug(f"Cell {self.index} is tagged as to wait for viz changes.")
+            return True
+        logger.debug(
+            f"Cell {self.index} is not tagged as to wait for viz changes, moving on..."
+        )
+        self.performance_metrics.execution_status = CellExecutionStatus.COMPLETED
+        return False
+
+    def viz_is_stable(self) -> bool:
+        if self.profiler.viz_element:
+            # If we have the viz element, check if it's stable
+            logger.debug("We already have the viz element, checking if it's stable...")
+            viz_is_stable: bool = self.profiler.viz_element.is_stable(self.index)
+            if viz_is_stable:
+                logger.debug(f"Cell {self.index} viz element is stable, moving on...")
+                self.performance_metrics.execution_status = (
+                    CellExecutionStatus.COMPLETED
+                )
+                return True
+            return False
+        # Look for the viz element in the page
+        logger.debug("Looking for the viz element in the page...")
+        self.profiler.detect_viz_element()
+        return False
 
     def capture_metrics(self, start_time: float) -> None:
         """
