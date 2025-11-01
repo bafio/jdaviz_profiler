@@ -1,50 +1,52 @@
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import Field, field, make_dataclass
 from enum import StrEnum, unique
 from statistics import mean, mode
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Type
 
+STATS_MAP: dict[str, Any] = {
+    "min": min,
+    "mean": mean,
+    "mode": mode,
+    "max": max,
+}
 
-@dataclass
-class Metrics:
-    """Class representing performance metrics."""
-
-    total_execution_time: float = 0
-    client_total_data_received: float = 0
-    client_min_cpu: float = 0
-    client_mean_cpu: float = 0
-    client_mode_cpu: float = 0
-    client_max_cpu: float = 0
-    client_cpu_list: list[float] = field(default_factory=list, repr=False)
-    client_min_memory: float = 0
-    client_mean_memory: float = 0
-    client_mode_memory: float = 0
-    client_max_memory: float = 0
-    client_memory_list: list[float] = field(default_factory=list, repr=False)
-    kernel_min_cpu: float = 0
-    kernel_mean_cpu: float = 0
-    kernel_mode_cpu: float = 0
-    kernel_max_cpu: float = 0
-    kernel_cpu_list: list[float] = field(default_factory=list, repr=False)
-    kernel_min_memory: float = 0
-    kernel_mean_memory: float = 0
-    kernel_mode_memory: float = 0
-    kernel_max_memory: float = 0
-    kernel_memory_list: list[float] = field(default_factory=list, repr=False)
-
-    # Define combinations of sources and metrics
-    # like (client,cpu), (kernel,memory), etc.
-    SOURCE_METRIC_COMBO: ClassVar[tuple[str, ...]] = tuple(
-        (s, m)
-        for s in (
-            "client",
-            "kernel",
-        )
-        for m in (
-            "cpu",
-            "memory",
-        )
+SOURCE_METRIC_COMBO: tuple[str, ...] = tuple(
+    (s, m)
+    for s in (
+        "client",
+        "kernel",
     )
+    for m in (
+        "cpu",
+        "memory",
+    )
+)
+
+SOURCE_METRIC_STAT_COMBO: tuple[str, ...] = tuple(
+    (so, st, m) for so, m in SOURCE_METRIC_COMBO for st in STATS_MAP.keys()
+)
+
+BASE_METRICS_FIELDS: tuple[tuple[str, Type, Field]] = tuple(
+    (
+        ("total_execution_time", float, field(default=0)),
+        ("client_total_data_received", float, field(default=0)),
+        *(
+            (f"{s}_{m}_list", list[float], field(default_factory=list, repr=False))
+            for s, m in SOURCE_METRIC_COMBO
+        ),
+        *(
+            ("_".join(so_m_st), float, field(default=0))
+            for so_m_st in SOURCE_METRIC_STAT_COMBO
+        ),
+    )
+)
+
+BaseMetrics = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
+
+
+class MetricsMixin:
+    """Class representing performance metrics."""
 
     # Keys to exclude from the custom dict factory
     # these are the lists used to compute averages
@@ -66,29 +68,23 @@ class Metrics:
             {
                 k: round(v, 2) if isinstance(v, float) else v
                 for (k, v) in data
-                if k not in Metrics.EXCLUDE_KEYS
+                if k not in MetricsMixin.EXCLUDE_KEYS
             }
         )
 
     def compute(self) -> None:
         """Compute the average cpu and memory usage from the recorded lists."""
-        for s, m in self.SOURCE_METRIC_COMBO:
-            if values := getattr(self, f"{s}_{m}_list"):
-                setattr(self, f"{s}_min_{m}", min(values))
-                setattr(self, f"{s}_mean_{m}", mean(values))
-                setattr(self, f"{s}_mode_{m}", mode(values))
-                setattr(self, f"{s}_max_{m}", max(values))
+        for so, st, m in SOURCE_METRIC_STAT_COMBO:
+            if values := getattr(self, f"{so}_{m}_list"):
+                setattr(self, f"{so}_{st}_{m}", STATS_MAP[st](values))
 
     def __str__(self) -> str:
         str_list = [
             f"total execution time: {self.total_execution_time:.2f} seconds.",
             f"client total data received: {self.client_total_data_received:.2f} MB.",
         ] + [
-            f"{s} min {m} usage: {getattr(self, f'{s}_min_{m}'):.2f}%."
-            f"{s} mean {m} usage: {getattr(self, f'{s}_mean_{m}'):.2f}%."
-            f"{s} mode {m} usage: {getattr(self, f'{s}_mode_{m}'):.2f}%."
-            f"{s} max {m} usage: {getattr(self, f'{s}_max_{m}'):.2f}%."
-            for s, m in self.SOURCE_METRIC_COMBO
+            f"{so} {st} {m} usage: {getattr(self, f'{so}_{st}_{m}'):.2f}%."
+            for so, st, m in SOURCE_METRIC_STAT_COMBO
         ]
         return " ".join(str_list)
 
@@ -116,8 +112,7 @@ class CellExecutionStatus(StrEnum):
         return not self.is_not_final
 
 
-@dataclass
-class CellMetrics(Metrics):
+class CellMetrics(BaseMetrics, MetricsMixin):
     """Class representing cell performance metrics."""
 
     cell_index: int = 0
@@ -131,8 +126,7 @@ class CellMetrics(Metrics):
         )
 
 
-@dataclass
-class NotebookMetrics(Metrics):
+class NotebookMetrics(BaseMetrics, MetricsMixin):
     """Class representing notebook performance metrics."""
 
     total_cells: int = 0
