@@ -273,7 +273,7 @@ class Profiler:
         for ec in tqdm(
             self.executable_cells,
             desc="Notebook Cells Execution Progress",
-            position=1,
+            # position=1,
             leave=False,
         ):
             try:

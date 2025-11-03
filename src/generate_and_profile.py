@@ -80,7 +80,7 @@ def generate_and_profile(
     progress_bar_kwargs: dict[str, Any] = {
         "iterable": nb_input_paths,
         "desc": "Profiling Notebooks Progress",
-        "position": 2,
+        # "position": 2,
         "leave": False,
     }
 

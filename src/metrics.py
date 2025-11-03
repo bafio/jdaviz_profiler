@@ -1,17 +1,18 @@
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import Field, field, make_dataclass
 from enum import StrEnum, unique
 from statistics import mean, mode
 from typing import Any, ClassVar, Type
 
-STATS_MAP: dict[str, Any] = {
+STATS_MAP: dict[str, Callable] = {
     "min": min,
     "mean": mean,
     "mode": mode,
     "max": max,
 }
 
-SOURCE_METRIC_COMBO: tuple[str, ...] = tuple(
+SOURCE_METRIC_COMBO: tuple[tuple[str, ...]] = tuple(
     (s, m)
     for s in (
         "client",
@@ -23,7 +24,7 @@ SOURCE_METRIC_COMBO: tuple[str, ...] = tuple(
     )
 )
 
-SOURCE_METRIC_STAT_COMBO: tuple[str, ...] = tuple(
+SOURCE_METRIC_STAT_COMBO: tuple[tuple[str, ...]] = tuple(
     (so, st, m) for so, m in SOURCE_METRIC_COMBO for st in STATS_MAP.keys()
 )
 
@@ -42,11 +43,12 @@ BASE_METRICS_FIELDS: tuple[tuple[str, Type, Field]] = tuple(
     )
 )
 
-BaseMetrics = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
+# Create the BaseMetrics dataclass dynamically
+BaseMetrics: Type = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
 
 
 class MetricsMixin:
-    """Class representing performance metrics."""
+    """Mixin Class to add metrics computation and string representation."""
 
     # Keys to exclude from the custom dict factory
     # these are the lists used to compute averages

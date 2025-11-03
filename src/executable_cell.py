@@ -75,7 +75,7 @@ class ExecutableCell:
             total=self.max_wait_time,
             desc=f"Cell {self.index} Timeout Progress",
             leave=False,
-            position=0,
+            # position=0,
         )
 
         # Set execution start time
