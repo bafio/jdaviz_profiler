@@ -2,13 +2,12 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import field, make_dataclass
 from enum import StrEnum, unique
-from statistics import mean, mode
+from statistics import mean
 from typing import Any, ClassVar
 
 STATS_MAP: dict[str, Callable] = {
     "min": min,
     "mean": mean,
-    "mode": mode,
     "max": max,
 }
 

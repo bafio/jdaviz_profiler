@@ -4,7 +4,7 @@ import argparse
 from typing import Any
 
 from src.profile_notebook import profile_notebook
-from src.utils import set_logger
+from src.utils import ProfilerContext, set_logger
 
 if __name__ == "__main__":
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -48,10 +48,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max_wait_time",
-        help="Max time to wait after executing each cell (in minutes, default: 5).",
+        help="Max time to wait after executing each cell (in seconds, default: 300).",
         required=False,
         type=int,
-        default=5,
+        default=300,
     )
     parser.add_argument(
         "--screenshots_dir_path",
@@ -97,4 +97,4 @@ if __name__ == "__main__":
     del _kwargs["log_file"]
 
     # Generate notebooks with the given arguments
-    profile_notebook(**_kwargs)
+    profile_notebook(ProfilerContext(**_kwargs))

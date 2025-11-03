@@ -3,6 +3,7 @@ import itertools
 import json
 import logging
 from collections import OrderedDict
+from dataclasses import dataclass, field
 from time import sleep, time
 from typing import Any
 
@@ -207,3 +208,52 @@ def get_notebook_parameters(
             cell_source: str = cell.source or ""
             return parse_assignments(cell_source)
     return OrderedDict()
+
+
+@dataclass
+class ProfilerContext:
+    """
+    Context dataclass to hold all necessary parameters for profiling.
+    Attributes
+    ----------
+    kernel_name : str
+        The name of the kernel to use for the notebook.
+    headless : bool
+        Whether to run in headless mode.
+    max_wait_time : int
+        Max time to wait after executing each cell (in seconds).
+    url : str
+        The URL of the JupyterLab instance where the notebook is going to be profiled.
+    token : str
+        The token to access the JupyterLab instance.
+    nb_input_path : str
+        Path of the input notebook to be profiled.
+    screenshots_dir_path : str | None
+        Path to the directory to where screenshots will be stored, if not passed as
+        an argument, screenshots will not be logged.
+    metrics_dir_path : str | None
+        Path to the directory to where metrics will be stored, if not passed as
+        an argument, metrics will not be saved to file.
+    """
+
+    kernel_name: str
+    headless: bool
+    max_wait_time: int
+    url: str = ""
+    token: str = ""
+    nb_input_path: str = ""
+    screenshots_dir_path: str | None = field(default=None)
+    metrics_dir_path: str | None = field(default=None)
+
+    def __repr__(self) -> str:
+        str_list: list[str] = [
+            f"URL: {self.url}",
+            f"Token: {self.token}",
+            f"Kernel Name: {self.kernel_name}",
+            f"Input Notebook Path: {self.nb_input_path}",
+            f"Headless: {self.headless}",
+            f"Max Wait Time: {self.max_wait_time}",
+            f"Screenshots Dir Path: {self.screenshots_dir_path}",
+            f"Metrics Dir Path: {self.metrics_dir_path}",
+        ]
+        return " -- ".join(str_list)

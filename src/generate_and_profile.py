@@ -7,7 +7,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from src.generate_notebooks import generate_notebooks
 from src.profile_notebook import profile_notebook
-from src.utils import get_logger
+from src.utils import ProfilerContext, get_logger
 
 # Initialize logger
 logger: logging.Logger = get_logger()
@@ -38,7 +38,7 @@ def generate_and_profile(
     headless : bool
         Whether to run in headless mode.
     max_wait_time : int
-        Max time to wait after executing each cell (in minutes).
+        Max time to wait after executing each cell (in seconds).
     log_screenshots : bool, optional
         Whether to log screenshots or not (default: False).
     save_metrics : bool, optional
@@ -68,15 +68,17 @@ def generate_and_profile(
     )
 
     # Set up the partial arguments for the `profile_notebook` call
-    profile_notebook_kwargs: dict[str, Any] = {
-        "url": url,
-        "token": token,
-        "kernel_name": kernel_name,
-        "headless": headless,
-        "max_wait_time": max_wait_time,
-        "screenshots_dir_path": screenshots_dir_path,
-        "metrics_dir_path": metrics_dir_path,
-    }
+    profiler_context: ProfilerContext = ProfilerContext(
+        url=url,
+        token=token,
+        kernel_name=kernel_name,
+        headless=headless,
+        max_wait_time=max_wait_time,
+        screenshots_dir_path=screenshots_dir_path,
+        metrics_dir_path=metrics_dir_path,
+    )
+
+    # Set up progress bar arguments
     progress_bar_kwargs: dict[str, Any] = {
         "iterable": nb_input_paths,
         "desc": "Profiling Notebooks Progress",
@@ -88,5 +90,5 @@ def generate_and_profile(
     with logging_redirect_tqdm([logger]):
         for nb_input_path in tqdm(**progress_bar_kwargs):
             logger.info(f"Profiling notebook: {nb_input_path}")
-            profile_notebook_kwargs["nb_input_path"] = nb_input_path
-            profile_notebook(**profile_notebook_kwargs)
+            profiler_context.nb_input_path = nb_input_path
+            profile_notebook(profiler_context)

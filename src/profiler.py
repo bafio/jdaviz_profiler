@@ -33,6 +33,7 @@ from src.jupyterlab_helper import JupyterLabHelper
 from src.metrics import SOURCE_METRIC_COMBO, CellExecutionStatus, NotebookMetrics
 from src.utils import (
     MEGABYTE,
+    ProfilerContext,
     explicit_wait,
     get_logger,
     get_notebook_cell_indexes_for_tag,
@@ -46,14 +47,31 @@ logger: logging.Logger = get_logger()
 
 @dataclass(eq=False)
 class Profiler:
-    """Class to profile a Jupyter notebook using Selenium."""
+    """Class to profile a Jupyter notebook using Selenium.
+    Attributes
+    ----------
+    context : ProfilerContext
+        The context containing all necessary parameters for profiling.
+    jupyterlab_helper : JupyterLabHelper
+        The JupyterLab helper instance to interact with JupyterLab.
+    driver : WebDriver | None
+        The Selenium WebDriver instance.
+    viz_element : VizElement | None
+        The visualization element instance.
+    executable_cells : tuple[ExecutableCell, ...]
+        The tuple of executable cells in the notebook.
+    nb_params_dict : OrderedDict[str, Any]
+        The ordered dictionary of notebook parameters.
+    ui_network_throttling_value : float | None
+        The UI network throttling value, if any.
+    skip_profiling_cell_indexes : frozenset
+        The set of cell indexes to skip profiling.
+    wait_for_viz_cell_indexes : frozenset
+        The set of cell indexes to wait for the viz element.
+    metrics : NotebookMetrics
+        The notebook performance metrics."""
 
-    kernel_name: str
-    nb_input_path: str
-    headless: bool
-    max_wait_time: int
-    screenshots_dir_path: str | None
-    metrics_dir_path: str | None
+    context: ProfilerContext
     jupyterlab_helper: JupyterLabHelper
     driver: WebDriver | None = field(default=None, repr=False, init=False)
     viz_element: VizElement | None = field(default=None, repr=False, init=False)
@@ -128,10 +146,12 @@ class Profiler:
             If no kernel id is found for the given kernel name.
         """
         kernel_id: str | None = self.jupyterlab_helper.get_kernel_id_from_name(
-            self.kernel_name
+            self.context.kernel_name
         )
         if kernel_id is None:
-            raise Exception(f"No kernel id found for the {self.kernel_name} kernel.")
+            raise Exception(
+                f"No kernel id found for the {self.context.kernel_name} kernel."
+            )
         return kernel_id
 
     def run_notebook(self) -> None:
@@ -158,7 +178,7 @@ class Profiler:
         Set up the profiler by reading the notebook and extracting relevant information.
         """
         # Read the notebook file
-        nb: NotebookNode = nb_read(self.nb_input_path, NO_CONVERT)
+        nb: NotebookNode = nb_read(self.context.nb_input_path, NO_CONVERT)
         # Extract cell indexes for skip_profiling and wait_for_viz tags
         self.skip_profiling_cell_indexes = frozenset(
             get_notebook_cell_indexes_for_tag(nb, self.SKIP_PROFILING_CELL_TAG)
@@ -182,7 +202,7 @@ class Profiler:
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
         # Set headless mode if specified
-        if self.headless:
+        if self.context.headless:
             options.add_argument("--headless=new")
 
         # Launch the browser and create a new page
@@ -196,7 +216,7 @@ class Profiler:
         Navigate to the notebook URL and wait for it to load.
         """
         # Navigate to the notebook URL
-        url: str = self.jupyterlab_helper.get_notebook_url(self.nb_input_path)
+        url: str = self.jupyterlab_helper.get_notebook_url(self.context.nb_input_path)
         logger.info(f"Navigating to {url}")
         self.driver.get(url)
 
@@ -261,7 +281,7 @@ class Profiler:
             ExecutableCell(
                 cell=nb_ui_cell,
                 index=i,
-                max_wait_time=self.max_wait_time,
+                max_wait_time=self.context.max_wait_time,
                 skip_profiling=i in self.skip_profiling_cell_indexes,
                 wait_for_viz=i in self.wait_for_viz_cell_indexes,
                 profiler=self,
@@ -333,15 +353,17 @@ class Profiler:
         Save the profiling metrics to a CSV file.
         """
         # If no metrics directory path is provided, do not save metrics
-        if self.metrics_dir_path is None:
+        if self.context.metrics_dir_path is None:
             logger.debug("Not saving metrics.")
             return
         try:
             file_path_name: str = os_path_join(
-                self.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
+                self.context.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
             )
             # Set the first column as the notebook path
-            notebook_path: dict[str, str] = {"notebook_path": self.nb_input_path}
+            notebook_path: dict[str, str] = {
+                "notebook_path": self.context.nb_input_path
+            }
             # Append notebook parameters with '_param' suffix
             nb_params_dict: dict[str, Any] = {
                 f"{key}_param": value for key, value in self.nb_params_dict.items()
@@ -464,7 +486,7 @@ class Profiler:
             The list of screenshot (in bytes) to save.
         """
         try:
-            if self.screenshots_dir_path is None:
+            if self.context.screenshots_dir_path is None:
                 logger.debug("Not logging screenshots.")
                 return
 
@@ -472,7 +494,8 @@ class Profiler:
             logger.debug("Logging screenshots...")
 
             file_path_name: str = os_path_join(
-                self.screenshots_dir_path, f"{perf_counter_ns()}_cell{cell_index}"
+                self.context.screenshots_dir_path,
+                f"{perf_counter_ns()}_cell{cell_index}",
             )
 
             for i, screenshot in enumerate(screenshots):

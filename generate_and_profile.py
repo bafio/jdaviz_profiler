@@ -51,10 +51,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--max_wait_time",
-        help="Max time to wait after executing each cell (in minutes, default: 5).",
+        help="Max time to wait after executing each cell (in seconds, default: 300).",
         required=False,
         type=int,
-        default=5,
+        default=300,
     )
     parser.add_argument(
         "--log_screenshots",
