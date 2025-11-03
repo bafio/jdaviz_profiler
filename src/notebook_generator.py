@@ -102,20 +102,16 @@ class NotebookGenerator:
             if self.PARAMS_CELL_TAG in cell.metadata.get("tags", []):
                 param_cell_found = True
                 if not cell.source:
-                    msg: str = (
+                    raise ValueError(
                         f"'{self.PARAMS_CELL_TAG}' cell found with "
                         "no content in the notebook."
                     )
-                    logger.error(msg)
-                    raise ValueError(msg)
                 cell.source = cell.source.format(**parameters_values)
 
         if not param_cell_found:
-            msg: str = (
+            raise ValueError(
                 f"No cell with '{self.PARAMS_CELL_TAG}' tag found in the notebook."
             )
-            logger.error(msg)
-            raise ValueError(msg)
 
         # Write the modified notebook to the output path
         nb_write(notebook, output_path)

@@ -38,15 +38,11 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
 
     # Check if the template.ipynb file exists
     if not os_path.isfile(template_path):
-        msg: str = f"template.ipynb file does not exist: {template_path}"
-        logger.error(msg)
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(f"template.ipynb file does not exist: {template_path}")
 
     # Check if the params file exists
     if not os_path.isfile(params_path):
-        msg: str = f"Params file does not exist: {params_path}"
-        logger.error(msg)
-        raise FileNotFoundError(msg)
+        raise FileNotFoundError(f"Params file does not exist: {params_path}")
 
     # Ensure the output directory exists
     if not os_path.isdir(output_dir_path):
@@ -69,7 +65,7 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
         # Create the output path for the generated notebook
         nb_filename: str = nb_base_filename
         for k, v in parameters_values.items():
-            nb_filename: str = f"{nb_filename}-{k.removesuffix('_value')}{v}"
+            nb_filename = f"{nb_filename}-{k.removesuffix('_value')}{v}"
         nb_filename = f"{nb_filename}.ipynb"
         output_path: str = os_path.join(output_dir_path, nb_filename)
 

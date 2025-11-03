@@ -64,18 +64,26 @@ class ExecutableCell:
     def execute(self) -> None:
         """
         Execute the cell and collect profiling metrics.
+        Raises
+        ------
+        Exception
+            If the kernel PID cannot be retrieved before execution.
         """
         logger.info(f"Start execution of cell {self.index}.")
 
         # Set kernel PID at the beginning of execution
-        kernel_pid: int = self.profiler.get_current_kernel_pid()
+        kernel_pid: int | None = self.profiler.get_current_kernel_pid()
+        if kernel_pid is None:
+            raise Exception(
+                f"Cannot get kernel PID before executing cell {self.index}."
+            )
 
         # Set up the progress bar for cell execution
         progress_bar: tqdm = tqdm(
             total=self.max_wait_time,
             desc=f"Cell {self.index} Timeout Progress",
             leave=False,
-            # position=0,
+            position=0,
         )
 
         # Set execution start time
@@ -89,7 +97,7 @@ class ExecutableCell:
         self.metrics.execution_status = CellExecutionStatus.IN_PROGRESS
 
         # Used to skip the first metrics capture
-        first_iter: bool | None = True
+        first_iter: bool = True
         while self.metrics.execution_status.is_not_final:
             # Capture metrics after the first iteration
             first_iter = not first_iter and self.capture_metrics()

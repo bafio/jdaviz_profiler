@@ -1,9 +1,9 @@
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import Field, field, make_dataclass
+from dataclasses import field, make_dataclass
 from enum import StrEnum, unique
 from statistics import mean, mode
-from typing import Any, ClassVar, Type
+from typing import Any, ClassVar
 
 STATS_MAP: dict[str, Callable] = {
     "min": min,
@@ -12,7 +12,7 @@ STATS_MAP: dict[str, Callable] = {
     "max": max,
 }
 
-SOURCE_METRIC_COMBO: tuple[tuple[str, ...]] = tuple(
+SOURCE_METRIC_COMBO: tuple[tuple[str, str], ...] = tuple(
     (s, m)
     for s in (
         "client",
@@ -24,11 +24,11 @@ SOURCE_METRIC_COMBO: tuple[tuple[str, ...]] = tuple(
     )
 )
 
-SOURCE_METRIC_STAT_COMBO: tuple[tuple[str, ...]] = tuple(
+SOURCE_METRIC_STAT_COMBO: tuple[tuple[str, str, str], ...] = tuple(
     (so, st, m) for so, m in SOURCE_METRIC_COMBO for st in STATS_MAP.keys()
 )
 
-BASE_METRICS_FIELDS: tuple[tuple[str, Type, Field]] = tuple(
+BASE_METRICS_FIELDS: tuple[tuple[str, type, object], ...] = tuple(
     (
         ("total_execution_time", float, field(default=0)),
         ("client_total_data_received", float, field(default=0)),
@@ -44,7 +44,7 @@ BASE_METRICS_FIELDS: tuple[tuple[str, Type, Field]] = tuple(
 )
 
 # Create the BaseMetrics dataclass dynamically
-BaseMetrics: Type = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
+BaseMetrics: type = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
 
 
 class MetricsMixin:
@@ -81,9 +81,15 @@ class MetricsMixin:
                 setattr(self, f"{so}_{st}_{m}", STATS_MAP[st](values))
 
     def __str__(self) -> str:
-        str_list = [
-            f"total execution time: {self.total_execution_time:.2f} seconds.",
-            f"client total data received: {self.client_total_data_received:.2f} MB.",
+        str_list: list[str] = [
+            (
+                f"total execution time: {getattr(self, 'total_execution_time'):.2f} "
+                "seconds."
+            ),
+            (
+                "client total data received: "
+                f"{getattr(self, 'client_total_data_received'):.2f} MB."
+            ),
         ] + [
             f"{so} {st} {m} usage: {getattr(self, f'{so}_{st}_{m}'):.2f}%."
             for so, st, m in SOURCE_METRIC_STAT_COMBO

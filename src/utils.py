@@ -101,8 +101,7 @@ def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
     """
     with open(file_path, "r") as f:
         if not (data := json.loads(f.read())):
-            msg: str = f"No data found in {file_path}"
-            raise ValueError(msg)
+            raise ValueError(f"No data found in {file_path}")
         return data
 
 
@@ -127,27 +126,29 @@ def parse_assignments(src: str) -> OrderedDict[str, Any]:
     OrderedDict[str, Any]
         Ordered dictionary mapping variable names to their evaluated literal values.
     """
-    tree: ast.AST = ast.parse(src)
+    tree: ast.Module = ast.parse(src)
     result: OrderedDict[str, Any] = OrderedDict()
+    value: Any | None
+    target: Any | None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             # e.g. a = 1 or a = (1,2)
             try:
-                value: Any = ast.literal_eval(node.value)
+                value = ast.literal_eval(node.value)
             except Exception:
                 continue
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    result[target.id]: Any = value
+                    result[target.id] = value
         elif isinstance(node, ast.AnnAssign):
             # e.g. a: int = 1
-            target: ast.Name | None = node.target
+            target = node.target
             if isinstance(target, ast.Name) and node.value is not None:
                 try:
-                    value: Any = ast.literal_eval(node.value)
+                    value = ast.literal_eval(node.value)
                 except Exception:
                     continue
-                result[target.id]: Any = value
+                result[target.id] = value
     return result
 
 
@@ -163,9 +164,10 @@ def dict_combinations(input_dict: dict) -> list[dict[str, Any]]:
     list of dict
         List of dictionaries, each representing a unique combination of parameters.
     """
-    keys: list[str] = input_dict.keys()
-    values: list[list[Any]] = input_dict.values()
-    return [dict(zip(keys, combo)) for combo in itertools.product(*values)]
+    return [
+        dict(zip(input_dict.keys(), combo))
+        for combo in itertools.product(*input_dict.values())
+    ]
 
 
 def get_notebook_cell_indexes_for_tag(

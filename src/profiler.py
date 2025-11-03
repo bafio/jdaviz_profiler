@@ -56,7 +56,7 @@ class Profiler:
     metrics_dir_path: str | None
     jupyterlab_helper: JupyterLabHelper
     driver: WebDriver | None = field(default=None, repr=False, init=False)
-    viz_element: WebElement | None = field(default=None, repr=False, init=False)
+    viz_element: VizElement | None = field(default=None, repr=False, init=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
         default_factory=tuple, repr=False, init=False
     )
@@ -118,12 +118,21 @@ class Profiler:
     def kernel_id(self) -> str:
         """
         Get the kernel id from the kernel name.
-         Returns
+        Returns
         -------
         str
             The kernel id.
+        Raises
+        -------
+        Exception
+            If no kernel id is found for the given kernel name.
         """
-        return self.jupyterlab_helper.get_kernel_id_from_name(self.kernel_name)
+        kernel_id: str | None = self.jupyterlab_helper.get_kernel_id_from_name(
+            self.kernel_name
+        )
+        if kernel_id is None:
+            raise Exception(f"No kernel id found for the {self.kernel_name} kernel.")
+        return kernel_id
 
     def run_notebook(self) -> None:
         """
@@ -273,7 +282,7 @@ class Profiler:
         for ec in tqdm(
             self.executable_cells,
             desc="Notebook Cells Execution Progress",
-            # position=1,
+            position=1,
             leave=False,
         ):
             try:
@@ -476,13 +485,13 @@ class Profiler:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during screenshots logging: {e}")
 
-    def get_current_kernel_pid(self) -> int:
+    def get_current_kernel_pid(self) -> int | None:
         """
         Get the PID of the current process running on the kernel.
         Returns
         -------
-        int
-            The PID of the current process running on the kernel.
+        int | None
+            The PID of the current process running on the kernel, or None if not found.
         """
         return self.jupyterlab_helper.get_current_kernel_pid(self.kernel_id)
 

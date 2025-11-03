@@ -286,7 +286,7 @@ class JupyterLabHelper:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
 
-    def get_current_kernel_pid(self, kernel_id: str) -> int:
+    def get_current_kernel_pid(self, kernel_id: str) -> int | None:
         """
         Get the PID of the current process running on a kernel by its ID.
         Parameters
@@ -295,8 +295,8 @@ class JupyterLabHelper:
             The ID of the kernel.
         Returns
         -------
-        int
-            The PID of the current process running on the kernel.
+        int | None
+            The PID of the current process running on the kernel, or None if not found.
         Raises
         ------
         RequestException
