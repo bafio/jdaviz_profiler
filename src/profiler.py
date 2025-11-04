@@ -1,13 +1,13 @@
-import csv
 import json
 import logging
+import os
+import os.path as os_path
 import random
 from collections import OrderedDict
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
 from io import BytesIO
-from os.path import join as os_path_join
 from time import perf_counter_ns
 from typing import Any, ClassVar
 
@@ -30,9 +30,10 @@ from urllib3.exceptions import ReadTimeoutError
 
 from src.executable_cell import ExecutableCell
 from src.jupyterlab_helper import JupyterLabHelper
-from src.metrics import SOURCE_METRIC_COMBO, CellExecutionStatus, NotebookMetrics
+from src.metrics import SOURCE_METRIC_COMBO, NotebookMetrics
 from src.utils import (
     MEGABYTE,
+    CellExecutionStatus,
     ProfilerContext,
     explicit_wait,
     get_logger,
@@ -73,6 +74,7 @@ class Profiler:
 
     context: ProfilerContext
     jupyterlab_helper: JupyterLabHelper
+    screenshots_dir_path: str | None = field(default=None, repr=False, init=False)
     driver: WebDriver | None = field(default=None, repr=False, init=False)
     viz_element: VizElement | None = field(default=None, repr=False, init=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
@@ -132,6 +134,17 @@ class Profiler:
     # Selector for the jdaviz app viz element
     VIZ_ELEMENT_SELECTOR: ClassVar[str] = ".jdaviz.imviz"
 
+    def __post_init__(self) -> None:
+        """Post-initialization to set up screenshots directory path."""
+        if self.context.screenshots_dir_path:
+            # Create the directory(ies), if not yet created, in where the screenshots
+            # will be saved. e.g.: <screenshots_dir_path>/<nb_filename_wo_ext>/
+            self.screenshots_dir_path = os_path.join(
+                self.context.screenshots_dir_path,
+                os_path.splitext(self.notebook_filename)[0],
+            )
+            os.makedirs(self.screenshots_dir_path, exist_ok=True)
+
     @cached_property
     def kernel_id(self) -> str:
         """
@@ -154,6 +167,17 @@ class Profiler:
             )
         return kernel_id
 
+    @cached_property
+    def notebook_filename(self) -> str:
+        """
+        Get the notebook filename from the input notebook path.
+        Returns
+        -------
+        str
+            The notebook filename.
+        """
+        return self.jupyterlab_helper.get_notebook_filename(self.context.nb_input_path)
+
     def run_notebook(self) -> None:
         """
         Run the notebook profiling process.
@@ -170,7 +194,7 @@ class Profiler:
             self.execute_notebook_cells()
         self.metrics.compute()
         logger.info(str(self.metrics))
-        self.save_metrics_to_csv()
+        self.save_notebook_metrics_to_csv()
         logger.info("Profiling completed.")
 
     def setup_profiler(self) -> None:
@@ -313,6 +337,8 @@ class Profiler:
             logging.info(f"Cell execution: {ec.metrics.execution_status}")
             # Collect metrics from the executed cell
             self.collect_executable_cell_metrics(ec)
+            # Save cell metrics to CSV file
+            self.save_cell_metrics_to_csv(ec)
 
             # If the cell execution did not complete successfully,
             # stop further executions
@@ -348,45 +374,41 @@ class Profiler:
                 getattr(executable_cell.metrics, f"{s}_{m}_list")
             )
 
-    def save_metrics_to_csv(self) -> None:
+    def save_cell_metrics_to_csv(self, executable_cell: ExecutableCell) -> None:
         """
-        Save the profiling metrics to a CSV file.
+        Save the profiling cell metrics to a CSV file.
         """
-        # If no metrics directory path is provided, do not save metrics
-        if self.context.metrics_dir_path is None:
-            logger.debug("Not saving metrics.")
+        # If notebook_metrics_file_path is not provided, do not save metrics
+        if self.context.cell_metrics_file_path is None:
+            logger.debug("Not saving cell metrics.")
             return
         try:
-            file_path_name: str = os_path_join(
-                self.context.metrics_dir_path, f"{perf_counter_ns()}_metrics.csv"
+            executable_cell.metrics.save_metrics_to_csv(
+                self.notebook_filename,
+                self.nb_params_dict,
+                self.context.cell_metrics_file_path,
             )
-            # Set the first column as the notebook path
-            notebook_path: dict[str, str] = {
-                "notebook_path": self.context.nb_input_path
-            }
-            # Append notebook parameters with '_param' suffix
-            nb_params_dict: dict[str, Any] = {
-                f"{key}_param": value for key, value in self.nb_params_dict.items()
-            }
-            # Append performance metrics with '_metric' suffix
-            metrics_dict: dict[str, Any] = {
-                f"{key}_metric": value
-                for key, value in asdict(
-                    self.metrics,
-                    dict_factory=NotebookMetrics.dict_factory,
-                ).items()
-            }
-            # Combine all into a single OrderedDict for CSV writing
-            data: list[OrderedDict[str, Any]] = [
-                OrderedDict(**notebook_path, **nb_params_dict, **metrics_dict)
-            ]
-            # Write metrics to CSV file
-            with open(file_path_name, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=list(data[0].keys()))
-                writer.writeheader()
-                writer.writerows(data)
+            logger.info(f"Metrics saved to {self.context.cell_metrics_file_path}")
+        except Exception as e:
+            # In case of an exception: log it and move on (do not block!)
+            logger.exception(f"An exception occurred during metrics saving: {e}")
 
-            logger.info(f"Metrics saved successfully to {file_path_name}")
+    def save_notebook_metrics_to_csv(self) -> None:
+        """
+        Save the profiling notebook metrics to a CSV file.
+        """
+        # If notebook_metrics_file_path is not provided, do not save metrics
+        if self.context.notebook_metrics_file_path is None:
+            logger.debug("Not saving notebook metrics.")
+            return
+        try:
+            self.metrics.save_metrics_to_csv(
+                self.notebook_filename,
+                self.nb_params_dict,
+                self.context.notebook_metrics_file_path,
+            )
+
+            logger.info(f"Metrics saved to {self.context.notebook_metrics_file_path}")
         except Exception as e:
             # In case of an exception: log it and move on (do not block!)
             logger.exception(f"An exception occurred during metrics saving: {e}")
@@ -486,15 +508,15 @@ class Profiler:
             The list of screenshot (in bytes) to save.
         """
         try:
-            if self.context.screenshots_dir_path is None:
+            if self.screenshots_dir_path is None:
                 logger.debug("Not logging screenshots.")
                 return
 
             # Log screenshots
             logger.debug("Logging screenshots...")
 
-            file_path_name: str = os_path_join(
-                self.context.screenshots_dir_path,
+            file_path_name: str = os_path.join(
+                self.screenshots_dir_path,
                 f"{perf_counter_ns()}_cell{cell_index}",
             )
 

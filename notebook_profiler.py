@@ -63,8 +63,21 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--metrics_dir_path",
-        help=("Path to the directory to where metrics will be stored (default: None)."),
+        "--notebook_metrics_file_path",
+        help=(
+            "Path to the file to where the notebook metrics will be "
+            "stored. (default: None)."
+        ),
+        required=False,
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--cell_metrics_file_path",
+        help=(
+            "Path to the file to where the cell metrics will be "
+            "stored. (default: None)."
+        ),
         required=False,
         type=str,
         default=None,

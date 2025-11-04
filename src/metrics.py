@@ -1,9 +1,12 @@
+import csv
+import os.path as os_path
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import field, make_dataclass
-from enum import StrEnum, unique
+from dataclasses import asdict, field, make_dataclass
 from statistics import mean
 from typing import Any, ClassVar
+
+from src.utils import CellExecutionStatus
 
 STATS_MAP: dict[str, Callable] = {
     "min": min,
@@ -46,8 +49,8 @@ BASE_METRICS_FIELDS: tuple[tuple[str, type, object], ...] = tuple(
 BaseMetrics: type = make_dataclass("BaseMetrics", BASE_METRICS_FIELDS)
 
 
-class MetricsMixin:
-    """Mixin Class to add metrics computation and string representation."""
+class Metrics(BaseMetrics):
+    """Class to add metrics computation and string representation."""
 
     # Keys to exclude from the custom dict factory
     # these are the lists used to compute averages
@@ -69,9 +72,49 @@ class MetricsMixin:
             {
                 k: round(v, 2) if isinstance(v, float) else v
                 for (k, v) in data
-                if k not in MetricsMixin.EXCLUDE_KEYS
+                if k not in Metrics.EXCLUDE_KEYS
             }
         )
+
+    def save_metrics_to_csv(
+        self, notebook_filename: str, nb_params_dict: dict[str, Any], csv_file_path: str
+    ) -> None:
+        """
+        Save the profiling metrics to a CSV file.
+        """
+        # Set the first column as the notebook filename
+        first_col: dict[str, str] = {"notebook_filename": notebook_filename}
+        # Append notebook parameters with '_param' suffix
+        _nb_params_dict: dict[str, Any] = {
+            f"{key}_param": value for key, value in nb_params_dict.items()
+        }
+        # Append performance metrics with '_metric' suffix
+        metrics_dict: dict[str, Any] = {
+            f"{key}_metric": value
+            for key, value in asdict(
+                self,
+                dict_factory=self.dict_factory,
+            ).items()
+        }
+        # Combine all into a single OrderedDict for CSV writing
+        data: list[OrderedDict[str, Any]] = [
+            OrderedDict(
+                **first_col,
+                **self.get_extra_values(),
+                **_nb_params_dict,
+                **metrics_dict,
+            )
+        ]
+        # Determine if we need to write the header
+        writeheader: bool = os_path.getsize(csv_file_path) <= 0
+        # Write metrics to CSV file
+        with open(csv_file_path, "a", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(data[0].keys()))
+            writeheader and writer.writeheader()
+            writer.writerows(data)
+
+    def get_extra_values(self) -> dict[str, Any]:
+        return {}
 
     def compute(self) -> None:
         """Compute the average cpu and memory usage from the recorded lists."""
@@ -96,34 +139,17 @@ class MetricsMixin:
         return " ".join(str_list)
 
 
-@unique
-class CellExecutionStatus(StrEnum):
-    """
-    Represents the various possible statuses of a notebook cell execution process.
-    """
-
-    PENDING = "Pending"
-    IN_PROGRESS = "In Progress"
-    COMPLETED = "Completed"
-    FAILED = "Failed"
-    TIMED_OUT = "Timed Out"
-
-    @property
-    def is_not_final(self) -> bool:
-        """Returns True if the status is not a final state, False otherwise."""
-        return self in {CellExecutionStatus.PENDING, CellExecutionStatus.IN_PROGRESS}
-
-    @property
-    def is_final(self) -> bool:
-        """Returns True if the status is a final state, False otherwise."""
-        return not self.is_not_final
-
-
-class CellMetrics(BaseMetrics, MetricsMixin):
+class CellMetrics(Metrics):
     """Class representing cell performance metrics."""
 
     cell_index: int = 0
     execution_status: CellExecutionStatus = CellExecutionStatus.PENDING
+
+    def get_extra_values(self) -> dict[str, Any]:
+        return {
+            "cell_index": self.cell_index,
+            "execution_status": self.execution_status,
+        }
 
     def __str__(self) -> str:
         return (
@@ -133,12 +159,19 @@ class CellMetrics(BaseMetrics, MetricsMixin):
         )
 
 
-class NotebookMetrics(BaseMetrics, MetricsMixin):
+class NotebookMetrics(Metrics):
     """Class representing notebook performance metrics."""
 
     total_cells: int = 0
     executed_cells: int = 0
     profiled_cells: int = 0
+
+    def get_extra_values(self) -> dict[str, Any]:
+        return {
+            "total_cells": self.total_cells,
+            "executed_cells": self.executed_cells,
+            "profiled_cells": self.profiled_cells,
+        }
 
     def __str__(self) -> str:
         return (

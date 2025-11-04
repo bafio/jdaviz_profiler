@@ -1,5 +1,6 @@
 import json
 import logging
+import os.path as os_path
 from dataclasses import dataclass
 from functools import cache, cached_property
 from typing import Any
@@ -47,7 +48,7 @@ class JupyterLabHelper:
         str
             The notebook filename.
         """
-        return notebook_path.split("/")[-1]
+        return os_path.split(notebook_path)[-1]
 
     @cache
     def get_notebook_url(self, notebook_path: str) -> str:

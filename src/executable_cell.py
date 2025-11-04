@@ -12,8 +12,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 from tqdm import TqdmWarning, tqdm
 
-from src.metrics import CellExecutionStatus, CellMetrics
-from src.utils import elapsed_time, explicit_wait, get_logger
+from src.metrics import CellMetrics
+from src.utils import CellExecutionStatus, elapsed_time, explicit_wait, get_logger
 
 # Avoid circular import
 if TYPE_CHECKING:
