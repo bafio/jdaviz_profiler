@@ -11,15 +11,12 @@ from io import BytesIO
 from time import perf_counter_ns
 from typing import Any, ClassVar
 
-from chromedriver_py import binary_path
+from chromedriver_py import binary_path  # type: ignore[import-untyped]
 from nbformat import NO_CONVERT, NotebookNode
 from nbformat import read as nb_read
 from PIL import Image
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver import Chrome
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium.webdriver import Chrome, ChromeOptions, ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
@@ -55,8 +52,8 @@ class Profiler:
         The context containing all necessary parameters for profiling.
     jupyterlab_helper : JupyterLabHelper
         The JupyterLab helper instance to interact with JupyterLab.
-    driver : WebDriver | None
-        The Selenium WebDriver instance.
+    driver : Chrome
+        The Selenium Chrome WebDriver instance.
     viz_element : VizElement | None
         The visualization element instance.
     executable_cells : tuple[ExecutableCell, ...]
@@ -75,7 +72,7 @@ class Profiler:
     context: ProfilerContext
     jupyterlab_helper: JupyterLabHelper
     screenshots_dir_path: str | None = field(default=None, repr=False, init=False)
-    driver: WebDriver | None = field(default=None, repr=False, init=False)
+    driver: Chrome = field(repr=False, init=False)
     viz_element: VizElement | None = field(default=None, repr=False, init=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
         default_factory=tuple, repr=False, init=False
@@ -219,7 +216,7 @@ class Profiler:
         """
         Set up the Selenium browser and page.
         """
-        options: Options = Options()
+        options: ChromeOptions = ChromeOptions()
         # Set window size option
         options.add_argument(self.WINDOW_SIZE_OPTION)
         # Enable performance logging to capture network events
@@ -230,7 +227,7 @@ class Profiler:
             options.add_argument("--headless=new")
 
         # Launch the browser and create a new page
-        self.driver: WebDriver = Chrome(
+        self.driver: Chrome = Chrome(
             options=options,
             service=ChromeService(executable_path=binary_path),
         )
@@ -276,7 +273,9 @@ class Profiler:
         Apply custom settings to the notebook UI such as viewport size and CSS styles.
         """
         # Apply custom viewport size
-        self.driver.set_window_size(*self.VIEWPORT_SIZE.values())
+        self.driver.set_window_size(
+            self.VIEWPORT_SIZE["width"], self.VIEWPORT_SIZE["height"]
+        )
         logger.debug(f"Page viewport set to {self.VIEWPORT_SIZE}.")
 
         # Apply custom CSS styles
@@ -446,7 +445,7 @@ class Profiler:
         """
         Close the Selenium driver.
         """
-        self.driver is not None and hasattr(self.driver, "quit") and self.driver.quit()
+        self.driver is not None and hasattr(self.driver, "quit") and self.driver.quit()  # type: ignore[func-returns-value]
         logger.debug("Driver closed.")
 
     def get_client_data_received(
@@ -468,7 +467,9 @@ class Profiler:
         """
         data_received: float = 0
         try:
-            performance_entries: dict[str, Any] = self.driver.get_log("performance")
+            performance_entries: list[dict[str, Any]] = self.driver.get_log(
+                "performance"
+            )
         except ReadTimeoutError:
             logger.warning("ReadTimeoutError when getting performance logs.")
             return data_received

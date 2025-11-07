@@ -117,7 +117,7 @@ class Metrics(BaseMetrics):
         return {}
 
     def compute(self) -> None:
-        """Compute the average cpu and memory usage from the recorded lists."""
+        """Compute the statistics on cpu and memory from the recorded lists."""
         for so, st, m in SOURCE_METRIC_STAT_COMBO:
             if values := getattr(self, f"{so}_{m}_list"):
                 setattr(self, f"{so}_{st}_{m}", STATS_MAP[st](values))

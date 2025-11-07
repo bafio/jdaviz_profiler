@@ -100,7 +100,7 @@ class ExecutableCell:
         first_iter: bool = True
         while self.metrics.execution_status.is_not_final:
             # Capture metrics after the first iteration
-            first_iter = not first_iter and self.capture_metrics()
+            first_iter = not first_iter and self.capture_metrics()  # type: ignore[func-returns-value]
             # Check execution status
             self.check_execution_status(kernel_pid, progress_bar)
 

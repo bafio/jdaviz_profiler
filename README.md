@@ -18,7 +18,7 @@ The `template.ipynb` must have a cell with placeholders for the parameters to be
 - precede all other cells with actual code using the parameters.
 - be tagged with the `parameters` label.
 
-Each parameter in the params.json file must have a corresponding placeholder in the template.ipynb file, and the placeholders must be unique having `_value` as suffix, e.g. `image_pixel_side_value` or `viewport_pixel_size_value`.
+Each parameter in the params.json file must have a corresponding placeholder in the template.ipynb file, and the placeholders must be unique having `_value` as suffix, e.g. `image_pixel_side_value` or `viewport_pixel_size_value` correspond to `image_pixel_side` or `viewport_pixel_size` parameter value used in the `template.ipynb`.
 
 The generated parameterized notebooks will be saved in the `<usecase path>/notebooks` directory.
 
@@ -60,10 +60,17 @@ Python 3.12 or later is supported.
 
 ### Pre-commit hook
 
-To install the pre-commit hook, simply run:
+To install the `pre-commit` hook, simply run:
 ```bash
 pip install ruff pre-commit
 pre-commit install
+```
+
+### Optional: `mypy`
+
+To install the `mypy`, simply run:
+```bash
+pip install mypy types-requests types-psutil types-tqdm
 ```
 
 
@@ -71,16 +78,32 @@ pre-commit install
 
 - Generate all possible notebooks from a usecase:
     ```bash
-    python notebooks_generator.py --input_dir_path <usecase path>
+    ./notebooks_generator.py --input_dir_path <usecase path>
     ```
 - Profile a specific notebook:
     ```bash
-    python notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
+    ./notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
     ```
+    Additional arguments:
+    - `--headless`: Run the browser in headless mode (default: `False`, same as `--no-headless`).
+    - `--max_wait_time`: Max time to wait after executing each cell (in seconds, default: `300`).
+    - `--screenshots_dir_path`: Path to the directory to where screenshots will be stored (default: `None`, no screenshot will be saved).
+    - `--notebook_metrics_file_path`: Path to the file to where the notebook metrics will be stored. (default: `None`, no notebook metrics will be stored).
+    - `--cell_metrics_file_path`: Path to the file to where the cell metrics will be stored. (default: `None`, no cell metrics will be stored).
 - Generate all possible notebooks from a usecase and profile all of them:
     ```bash
-    python generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
+    ./generate_and_profile.py --input_dir_path <usecase path> --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name>
     ```
+    Additional arguments:
+    - `--headless`: Run the browser in headless mode (default: False, same as `--no-headless`).
+    - `--max_wait_time`: Max time to wait after executing each cell (in seconds, default: `300`).
+    - `--log_screenshots`: Whether to log screenshots or not (default: `False`, same as `--no-log_screenshots`).
+    - `--save_metrics`: Whether to save profiling metrics to a CSV file (default: `False`, same as `--no-save_metrics`).
+
+
+All scripts expose a `--log_level` argument to set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; default is `INFO`), and a `--log_file` argument to specify a log file path (if not provided, logs will only be printed to the console).
+
+All scripts have a `--help` option for more details on usage and available arguments.
 
 
 ## Dependencies
@@ -91,6 +114,7 @@ pre-commit install
 - `chromedriver-py`
 - `requests`
 - `nbformat`
+- `tqdm`
 
 
 ## License

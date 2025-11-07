@@ -15,6 +15,7 @@ dependencies = [
     "chromedriver-py",
     "requests",
     "nbformat",
+    "tqdm",
 ]
 dynamic = ["version"]
 

@@ -71,7 +71,7 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
 
         # Check if the output path already exists, if so remove the file
         try:
-            os_path.exists(output_path) and os.remove(output_path)
+            os_path.exists(output_path) and os.remove(output_path)  # type: ignore[func-returns-value]
         except OSError as e:
             logger.error(f"Error removing existing file {output_path}: {e}")
             continue
