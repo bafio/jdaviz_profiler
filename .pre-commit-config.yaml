@@ -30,3 +30,11 @@ repos:
       # Run the formatter.
       - id: ruff-format
         types_or: [ python, pyi ]
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: 'v1.18.2' # Use the latest stable version
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-requests
+          - types-psutil
+          - types-tqdm

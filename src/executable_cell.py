@@ -104,11 +104,11 @@ class ExecutableCell:
             # Check execution status
             self.check_execution_status(kernel_pid, progress_bar)
 
-        # Finalize the progress bar
-        self.finalize_progress_bar(progress_bar)
-
         # Capture metrics one last time after loop exit
         self.capture_metrics()
+
+        # Finalize the progress bar
+        self.finalize_progress_bar(progress_bar)
 
         # Compute performance metrics
         self.metrics.compute()
@@ -211,8 +211,8 @@ class ExecutableCell:
         ):
             return
 
-        # Save time elapsed
-        self.metrics.total_execution_time = elapsed_time(self.execution_start_time)
+        # Save client time elapsed
+        self.metrics.client_execution_time = elapsed_time(self.execution_start_time)
 
         # Capture client CPU usage
         self.metrics.client_cpu_list.append(
@@ -242,7 +242,7 @@ class ExecutableCell:
         if self.metrics.execution_status.is_final:
             timestamp_end: datetime = datetime.now()
             timestamp_start: datetime = timestamp_end - timedelta(
-                seconds=self.metrics.total_execution_time
+                seconds=self.metrics.client_execution_time
             )
             self.metrics.client_total_data_received = (
                 self.profiler.get_client_data_received(timestamp_start, timestamp_end)
@@ -273,4 +273,8 @@ class ExecutableCell:
             if match and match.group("DONE"):
                 logger.info(f"Cell {self.index} DONE statement found.")
                 self.done_found = True
+                # Save kernel time elapsed
+                self.metrics.kernel_execution_time = elapsed_time(
+                    self.execution_start_time
+                )
                 return
