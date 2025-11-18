@@ -27,7 +27,7 @@ from urllib3.exceptions import ReadTimeoutError
 
 from src.executable_cell import ExecutableCell
 from src.jupyterlab_helper import JupyterLabHelper
-from src.metrics import SOURCE_METRIC_COMBO, NotebookMetrics
+from src.metrics import SOURCE_METRIC_COMBO, SOURCES, NotebookMetrics
 from src.utils import (
     MEGABYTE,
     CellExecutionStatus,
@@ -361,16 +361,24 @@ class Profiler:
         if executable_cell.skip_profiling:
             return
         self.metrics.profiled_cells += 1
-        self.metrics.total_execution_time += (
-            executable_cell.metrics.total_execution_time
-        )
         self.metrics.client_total_data_received += (
             executable_cell.metrics.client_total_data_received
         )
+        attr_name: str
+        # Collect execution times for each source
+        for source in SOURCES:
+            attr_name = f"{source}_execution_time"
+            setattr(
+                self.metrics,
+                attr_name,
+                getattr(self.metrics, attr_name)
+                + getattr(executable_cell.metrics, attr_name),
+            )
         # Append source-metric combinations to the corresponding lists
-        for s, m in SOURCE_METRIC_COMBO:
-            getattr(self.metrics, f"{s}_{m}_list").extend(
-                getattr(executable_cell.metrics, f"{s}_{m}_list")
+        for source, metric in SOURCE_METRIC_COMBO:
+            attr_name = f"{source}_{metric}_list"
+            getattr(self.metrics, attr_name).extend(
+                getattr(executable_cell.metrics, attr_name)
             )
 
     def save_cell_metrics_to_csv(self, executable_cell: ExecutableCell) -> None:

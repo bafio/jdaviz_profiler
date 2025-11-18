@@ -8,22 +8,14 @@ from typing import Any, ClassVar
 
 from src.utils import CellExecutionStatus
 
-STATS_MAP: dict[str, Callable] = {
-    "min": min,
-    "mean": mean,
-    "max": max,
-}
+STATS_MAP: dict[str, Callable] = {"min": min, "mean": mean, "max": max}
+
+SOURCES: tuple[str, ...] = ("client", "kernel")
+
+METRICS: tuple[str, ...] = ("cpu", "memory")
 
 SOURCE_METRIC_COMBO: tuple[tuple[str, str], ...] = tuple(
-    (s, m)
-    for s in (
-        "client",
-        "kernel",
-    )
-    for m in (
-        "cpu",
-        "memory",
-    )
+    (s, m) for s in SOURCES for m in METRICS
 )
 
 SOURCE_METRIC_STAT_COMBO: tuple[tuple[str, str, str], ...] = tuple(
@@ -32,8 +24,8 @@ SOURCE_METRIC_STAT_COMBO: tuple[tuple[str, str, str], ...] = tuple(
 
 BASE_METRICS_FIELDS: tuple[tuple[str, type, object], ...] = tuple(
     (
-        ("total_execution_time", float, field(default=0)),
         ("client_total_data_received", float, field(default=0)),
+        *((f"{s}_execution_time", float, field(default=0)) for s in SOURCES),
         *(
             (f"{s}_{m}_list", list[float], field(default_factory=list, repr=False))
             for s, m in SOURCE_METRIC_COMBO
@@ -125,14 +117,15 @@ class Metrics(BaseMetrics):
     def __str__(self) -> str:
         str_list: list[str] = [
             (
-                f"total execution time: {getattr(self, 'total_execution_time'):.2f} "
-                "seconds."
-            ),
-            (
                 "client total data received: "
                 f"{getattr(self, 'client_total_data_received'):.2f} MB."
             ),
-        ] + [
+        ]
+        str_list += [
+            f"{s} execution time: {getattr(self, f'{s}_execution_time'):.2f} seconds."
+            for s in SOURCES
+        ]
+        str_list += [
             f"{so} {st} {m} usage: {getattr(self, f'{so}_{st}_{m}'):.2f}%."
             for so, st, m in SOURCE_METRIC_STAT_COMBO
         ]

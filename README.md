@@ -62,15 +62,8 @@ Python 3.12 or later is supported.
 
 To install the `pre-commit` hook, simply run:
 ```bash
-pip install ruff pre-commit
+pip install ruff mypy types-requests types-psutil types-tqdm pre-commit
 pre-commit install
-```
-
-### Optional: `mypy`
-
-To install the `mypy`, simply run:
-```bash
-pip install mypy types-requests types-psutil types-tqdm
 ```
 
 
