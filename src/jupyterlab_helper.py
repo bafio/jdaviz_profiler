@@ -1,8 +1,8 @@
 import json
 import logging
-import os.path as os_path
 from dataclasses import dataclass
 from functools import cache, cached_property
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -36,27 +36,27 @@ class JupyterLabHelper:
         }
 
     @staticmethod
-    def get_notebook_filename(notebook_path: str) -> str:
+    def get_notebook_filename(notebook_path: Path) -> str:
         """
         Extract the notebook filename from the given path.
         Parameters
         ----------
-        notebook_path : str
+        notebook_path : Path
             Path to the notebook file.
         Returns
         -------
         str
             The notebook filename.
         """
-        return os_path.split(notebook_path)[-1]
+        return notebook_path.name
 
     @cache
-    def get_notebook_url(self, notebook_path: str) -> str:
+    def get_notebook_url(self, notebook_path: Path) -> str:
         """
         Get the full URL to access a notebook in JupyterLab.
         Parameters
         ----------
-        notebook_path : str
+        notebook_path : Path
             Path to the notebook file.
         Returns
         -------
@@ -183,12 +183,12 @@ class JupyterLabHelper:
             logger.exception(f"An unexpected error occurred: {e}")
             raise e
 
-    def upload_notebook(self, notebook_path: str) -> None:
+    def upload_notebook(self, notebook_path: Path) -> None:
         """
         Upload the notebook from the given path to the JupyterLab instance.
         Parameters
         ----------
-        notebook_path : str
+        notebook_path : Path
             Path to the notebook file to be uploaded.
         Raises
         ------
@@ -204,7 +204,7 @@ class JupyterLabHelper:
             notebook_filename: str = self.get_notebook_filename(notebook_path)
             upload_url: str = f"{self.url}/api/contents/{notebook_filename}"
             logger.info(f"Uploading notebook to {upload_url}")
-            with open(notebook_path, "r", encoding="utf-8") as nb_file:
+            with notebook_path.open("r", encoding="utf-8") as nb_file:
                 payload: dict[str, Any] = {
                     "content": json.load(nb_file),
                     "type": "notebook",

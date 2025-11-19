@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from src.generate_notebooks import generate_notebooks
 from src.utils import set_logger
-
-NOTEBOOK_TEMPLATE_FILENAME: str = "template.ipynb"
-PARAMS_FILENAME: str = "params.json"
-OUTPUT_DIR_PATH: str = "notebooks"
-
 
 if __name__ == "__main__":
     parser: argparse.ArgumentParser = argparse.ArgumentParser(
@@ -24,13 +20,13 @@ if __name__ == "__main__":
             "Path to the directory containing the template.ipynb and params.json files."
         ),
         required=True,
-        type=str,
+        type=Path,
     )
     parser.add_argument(
         "--log_file",
         help="Path to the log file.",
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(

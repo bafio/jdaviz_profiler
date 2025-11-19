@@ -1,13 +1,13 @@
 import json
 import logging
-import os
-import os.path as os_path
 import random
 from collections import OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import cached_property
 from io import BytesIO
+from pathlib import Path
 from time import perf_counter_ns
 from typing import Any, ClassVar
 
@@ -52,6 +52,8 @@ class Profiler:
         The context containing all necessary parameters for profiling.
     jupyterlab_helper : JupyterLabHelper
         The JupyterLab helper instance to interact with JupyterLab.
+    screenshots_dir_path : Path | None
+        Path to the directory to where screenshots will be stored.
     driver : Chrome
         The Selenium Chrome WebDriver instance.
     viz_element : VizElement | None
@@ -71,7 +73,7 @@ class Profiler:
 
     context: ProfilerContext
     jupyterlab_helper: JupyterLabHelper
-    screenshots_dir_path: str | None = field(default=None, repr=False, init=False)
+    screenshots_dir_path: Path | None = field(default=None, repr=False, init=False)
     driver: Chrome = field(repr=False, init=False)
     viz_element: VizElement | None = field(default=None, repr=False, init=False)
     executable_cells: tuple[ExecutableCell, ...] = field(
@@ -133,14 +135,13 @@ class Profiler:
 
     def __post_init__(self) -> None:
         """Post-initialization to set up screenshots directory path."""
-        if self.context.screenshots_dir_path:
+        if self.context.screenshots_dir_path is not None:
             # Create the directory(ies), if not yet created, in where the screenshots
             # will be saved. e.g.: <screenshots_dir_path>/<nb_filename_wo_ext>/
-            self.screenshots_dir_path = os_path.join(
-                self.context.screenshots_dir_path,
-                os_path.splitext(self.notebook_filename)[0],
+            self.screenshots_dir_path = (
+                self.context.screenshots_dir_path / Path(self.notebook_filename).stem
             )
-            os.makedirs(self.screenshots_dir_path, exist_ok=True)
+            self.screenshots_dir_path.mkdir(parents=True, exist_ok=True)
 
     @cached_property
     def kernel_id(self) -> str:
@@ -506,15 +507,15 @@ class Profiler:
             )
             logger.debug("Viz element detected and assigned.")
 
-    def log_screenshots(self, cell_index: int, screenshots: list[bytes]) -> None:
+    def log_screenshots(self, cell_index: int, screenshots: Iterable[bytes]) -> None:
         """
         Save screenshots of a cell to a determined directory path.
         Parameters
         ----------
         cell_index : int
             The index of the cell.
-        screenshots : list[bytes]
-            The list of screenshot (in bytes) to save.
+        screenshots : Iterable[bytes]
+            The Iterable of screenshot (in bytes) to save.
         """
         try:
             if self.screenshots_dir_path is None:
@@ -524,9 +525,8 @@ class Profiler:
             # Log screenshots
             logger.debug("Logging screenshots...")
 
-            file_path_name: str = os_path.join(
-                self.screenshots_dir_path,
-                f"{perf_counter_ns()}_cell{cell_index}",
+            file_path_name: Path = (
+                self.screenshots_dir_path / f"{perf_counter_ns()}_cell{cell_index}"
             )
 
             for i, screenshot in enumerate(screenshots):

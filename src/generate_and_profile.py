@@ -1,6 +1,5 @@
 import logging
-import os
-import os.path as os_path
+from pathlib import Path
 from time import gmtime, perf_counter_ns, strftime
 from typing import Any
 
@@ -16,7 +15,7 @@ logger: logging.Logger = get_logger()
 
 
 def generate_and_profile(
-    input_dir_path: str,
+    input_dir_path: Path,
     url: str,
     token: str,
     kernel_name: str,
@@ -29,7 +28,7 @@ def generate_and_profile(
     Generate profiler notebooks from a template and run the profiler on them.
     Parameters
     ----------
-    input_dir_path : str
+    input_dir_path : Path
         Path to the directory containing the template notebook and params.json file.
     url : str
         The URL of the JupyterLab instance where the notebook is going to be profiled.
@@ -59,7 +58,7 @@ def generate_and_profile(
     )
 
     # Generate notebooks from template
-    nb_input_paths: list[str] = generate_notebooks(input_dir_path=input_dir_path)
+    nb_input_paths: list[Path] = generate_notebooks(input_dir_path=input_dir_path)
 
     # Set up the partial context for the `profile_notebook` call
     profiler_context: ProfilerContext = ProfilerContext(
@@ -73,35 +72,27 @@ def generate_and_profile(
     if log_screenshots:
         # Create the directory(ies), if not yet created, in where the screenshots
         # will be saved. e.g.: <input_dir_path>/screenshots/<YYYY_MM_DD>/
-        screenshots_dir_path: str = os_path.join(
-            input_dir_path,
-            "screenshots",
-            strftime("%Y_%m_%d", gmtime()),
+        screenshots_dir_path: Path = (
+            input_dir_path / "screenshots" / strftime("%Y_%m_%d", gmtime())
         )
-        os.makedirs(screenshots_dir_path, exist_ok=True)
+        screenshots_dir_path.mkdir(parents=True, exist_ok=True)
         profiler_context.screenshots_dir_path = screenshots_dir_path
 
     if save_metrics:
         # Create the directory(ies), if not yet created, in where the metrics
         # will be saved. e.g.: <input_dir_path>/metrics/<YYYY_MM_DD>/
-        metrics_dir_path: str = os_path.join(
-            input_dir_path,
-            "metrics",
-            strftime("%Y_%m_%d", gmtime()),
+        metrics_dir_path: Path = (
+            input_dir_path / "metrics" / strftime("%Y_%m_%d", gmtime())
         )
-        os.makedirs(metrics_dir_path, exist_ok=True)
+        metrics_dir_path.mkdir(parents=True, exist_ok=True)
 
-        # Create the file in where the metrics will be saved.
-        metrics_filename: str = f"metrics_{perf_counter_ns()}.csv"
-        notebook_metrics_file_path: str = os_path.join(
-            metrics_dir_path, f"notebook_{metrics_filename}"
-        )
-        open(notebook_metrics_file_path, "a").close()
-        cell_metrics_file_path: str = os_path.join(
-            metrics_dir_path, f"cell_{metrics_filename}"
-        )
-        open(cell_metrics_file_path, "a").close()
+        # Create the file(s) in where the metrics will be saved.
+        metrics_fn: str = f"metrics_{perf_counter_ns()}.csv"
+        notebook_metrics_file_path: Path = metrics_dir_path / f"notebook_{metrics_fn}"
+        notebook_metrics_file_path.touch(exist_ok=True)
         profiler_context.notebook_metrics_file_path = notebook_metrics_file_path
+        cell_metrics_file_path: Path = metrics_dir_path / f"cell_{metrics_fn}"
+        cell_metrics_file_path.touch(exist_ok=True)
         profiler_context.cell_metrics_file_path = cell_metrics_file_path
 
     # Set up progress bar arguments
