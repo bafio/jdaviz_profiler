@@ -46,7 +46,7 @@ class VizElement:
         screenshot_after: bytes = self.element.screenshot_as_png
 
         # Log screenshots
-        self.profiler.log_screenshots(cell_index, [screenshot_before, screenshot_after])
+        self.profiler.log_screenshots(cell_index, (screenshot_before, screenshot_after))
 
         # Compare the two screenshots
         screenshots_are_the_same: bool = screenshot_before == screenshot_after

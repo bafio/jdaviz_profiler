@@ -5,6 +5,7 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import StrEnum, unique
+from pathlib import Path
 from time import sleep, time
 from typing import Any
 
@@ -31,15 +32,15 @@ class ProfilerContext:
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
-    nb_input_path : str
+    nb_input_path : Path
         Path of the input notebook to be profiled.
-    screenshots_dir_path : str | None
+    screenshots_dir_path : Path | None
         Path to the directory to where screenshots will be stored, if not passed as
         an argument, screenshots will not be logged.
-    notebook_metrics_file_path : str | None
+    notebook_metrics_file_path : Path | None
         Path to the file to where the notebook metrics will be stored, if not passed as
         an argument,notebook metrics will not be saved to file.
-    cell_metrics_file_path : str | None
+    cell_metrics_file_path : Path | None
         Path to the file to where the cell metrics will be stored, if not passed as
         an argument, cell metrics will not be saved to file.
     """
@@ -49,24 +50,25 @@ class ProfilerContext:
     max_wait_time: int
     url: str = ""
     token: str = ""
-    nb_input_path: str = ""
-    screenshots_dir_path: str | None = field(default=None)
-    notebook_metrics_file_path: str | None = field(default=None)
-    cell_metrics_file_path: str | None = field(default=None)
+    nb_input_path: Path = field(default_factory=Path)
+    screenshots_dir_path: Path | None = field(default=None)
+    notebook_metrics_file_path: Path | None = field(default=None)
+    cell_metrics_file_path: Path | None = field(default=None)
 
     def __repr__(self) -> str:
-        str_list: list[str] = [
-            f"URL: {self.url}",
-            f"Token: {self.token}",
-            f"Kernel Name: {self.kernel_name}",
-            f"Input Notebook Path: {self.nb_input_path}",
-            f"Headless: {self.headless}",
-            f"Max Wait Time: {self.max_wait_time}",
-            f"Screenshots Dir Path: {self.screenshots_dir_path}",
-            f"Notebook Metrics File Path: {self.notebook_metrics_file_path}",
-            f"Cell Metrics File Path: {self.cell_metrics_file_path}",
-        ]
-        return " -- ".join(str_list)
+        return " -- ".join(
+            (
+                f"URL: {self.url}",
+                f"Token: {self.token}",
+                f"Kernel Name: {self.kernel_name}",
+                f"Input Notebook Path: {self.nb_input_path}",
+                f"Headless: {self.headless}",
+                f"Max Wait Time: {self.max_wait_time}",
+                f"Screenshots Dir Path: {self.screenshots_dir_path}",
+                f"Notebook Metrics File Path: {self.notebook_metrics_file_path}",
+                f"Cell Metrics File Path: {self.cell_metrics_file_path}",
+            )
+        )
 
 
 @unique
@@ -92,7 +94,7 @@ class CellExecutionStatus(StrEnum):
         return not self.is_not_final
 
 
-def set_logger(log_level: str = "INFO", log_file: str | None = None) -> None:
+def set_logger(log_level: str = "INFO", log_file: Path | None = None) -> None:
     """
     Set up the logger with the specified log level.
     Parameters
@@ -100,7 +102,7 @@ def set_logger(log_level: str = "INFO", log_file: str | None = None) -> None:
     log_level : str
         The logging level (e.g., 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL').
         Default is 'INFO'.
-    log_file : str | None
+    log_file : Path | None
         The path to the log file. If None, logs will only be printed to console.
         Default is None.
     """
@@ -115,7 +117,7 @@ def set_logger(log_level: str = "INFO", log_file: str | None = None) -> None:
     console_handler: logging.StreamHandler = logging.StreamHandler()
     console_handler.setFormatter(logging_formatter)
     _logger.addHandler(console_handler)
-    if log_file:
+    if log_file is not None:
         # Add file handler
         file_handler: logging.FileHandler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging_formatter)
@@ -160,7 +162,7 @@ def elapsed_time(from_time: float = 0) -> float:
     return time() - from_time
 
 
-def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
+def load_dict_from_json_file(file_path: Path) -> dict[str, Any]:
     """
     Load a dictionary of key-value pairs from a JSON file.
     Parameters
@@ -178,7 +180,7 @@ def load_dict_from_json_file(file_path: str) -> dict[str, Any]:
     ValueError
         If the JSON file is empty or improperly formatted.
     """
-    with open(file_path, "r") as f:
+    with file_path.open("r") as f:
         if not (data := json.loads(f.read())):
             raise ValueError(f"No data found in {file_path}")
         return data

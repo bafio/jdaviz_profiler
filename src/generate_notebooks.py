@@ -1,6 +1,5 @@
 import logging
-import os
-from os import path as os_path
+from pathlib import Path
 from typing import Any
 
 from src.notebook_generator import NotebookGenerator
@@ -14,13 +13,13 @@ PARAMS_FILENAME: str = "params.json"
 OUTPUT_DIR_PATH: str = "notebooks"
 
 
-def generate_notebooks(input_dir_path: str) -> list[str]:
+def generate_notebooks(input_dir_path: Path) -> list[Path]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.json, and
     save them to the "notebooks" directory.
     Parameters
     ----------
-    input_dir_path : str
+    input_dir_path : Path
         Path to the directory containing the template.ipynb and params.json files.
     Raises
     ------
@@ -32,21 +31,24 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
     )
 
     # Resolve the template.ipynb file path, params file path, and output directory path
-    template_path: str = os_path.join(input_dir_path, NOTEBOOK_TEMPLATE_FILENAME)
-    params_path: str = os_path.join(input_dir_path, PARAMS_FILENAME)
-    output_dir_path: str = os_path.join(input_dir_path, OUTPUT_DIR_PATH)
+    template_path: Path = input_dir_path / NOTEBOOK_TEMPLATE_FILENAME
+    params_path: Path = input_dir_path / PARAMS_FILENAME
+    output_dir_path: Path = input_dir_path / OUTPUT_DIR_PATH
 
     # Check if the template.ipynb file exists
-    if not os_path.isfile(template_path):
-        raise FileNotFoundError(f"template.ipynb file does not exist: {template_path}")
+    if not template_path.exists():
+        raise FileNotFoundError(
+            f"{NOTEBOOK_TEMPLATE_FILENAME} file does not exist in {input_dir_path}"
+        )
 
     # Check if the params file exists
-    if not os_path.isfile(params_path):
-        raise FileNotFoundError(f"Params file does not exist: {params_path}")
+    if not params_path.exists():
+        raise FileNotFoundError(
+            f"{PARAMS_FILENAME} file does not exist in {input_dir_path}"
+        )
 
     # Ensure the output directory exists
-    if not os_path.isdir(output_dir_path):
-        os.makedirs(output_dir_path)
+    output_dir_path.mkdir(parents=True, exist_ok=True)
 
     # Load parameters
     params: dict[str, Any] = load_dict_from_json_file(params_path)
@@ -59,22 +61,18 @@ def generate_notebooks(input_dir_path: str) -> list[str]:
 
     # Initialize the NotebookGenerator
     notebook_generator = NotebookGenerator(template_path=template_path)
-    nb_base_filename: str = os_path.split(input_dir_path)[-1]
-    output_paths: list[str] = []
+    nb_base_filename: str = input_dir_path.stem
+    output_paths: list[Path] = []
     for parameters_values in parameters_combinations:
         # Create the output path for the generated notebook
         nb_filename: str = nb_base_filename
         for k, v in parameters_values.items():
             nb_filename = f"{nb_filename}-{k.removesuffix('_value')}{v}"
         nb_filename = f"{nb_filename}.ipynb"
-        output_path: str = os_path.join(output_dir_path, nb_filename)
+        output_path: Path = output_dir_path / nb_filename
 
         # Check if the output path already exists, if so remove the file
-        try:
-            os_path.exists(output_path) and os.remove(output_path)  # type: ignore[func-returns-value]
-        except OSError as e:
-            logger.error(f"Error removing existing file {output_path}: {e}")
-            continue
+        output_path.exists() and output_path.unlink(missing_ok=True)  # type: ignore[func-returns-value]
 
         # Generate the notebook
         notebook_generator.generate_and_save(

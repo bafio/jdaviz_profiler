@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from src.generate_and_profile import generate_and_profile
@@ -20,7 +21,7 @@ if __name__ == "__main__":
             "file."
         ),
         required=True,
-        type=str,
+        type=Path,
     )
     parser.add_argument(
         "--url",
@@ -72,7 +73,7 @@ if __name__ == "__main__":
         "--log_file",
         help="Path to the log file.",
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(

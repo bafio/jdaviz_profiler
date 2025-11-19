@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from src.profile_notebook import profile_notebook
@@ -38,7 +39,7 @@ if __name__ == "__main__":
         "--nb_input_path",
         help="Path to the input notebook to be profiled.",
         required=True,
-        type=str,
+        type=Path,
     )
     parser.add_argument(
         "--headless",
@@ -59,7 +60,7 @@ if __name__ == "__main__":
             "Path to the directory to where screenshots will be stored (default: None)."
         ),
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(
@@ -69,7 +70,7 @@ if __name__ == "__main__":
             "stored. (default: None)."
         ),
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(
@@ -79,14 +80,14 @@ if __name__ == "__main__":
             "stored. (default: None)."
         ),
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(
         "--log_file",
         help="Path to the log file.",
         required=False,
-        type=str,
+        type=Path,
         default=None,
     )
     parser.add_argument(

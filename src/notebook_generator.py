@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from functools import cached_property
 from os import linesep
+from pathlib import Path
 from typing import Any, ClassVar
 
 from nbformat import NO_CONVERT
@@ -27,7 +28,7 @@ class NotebookGenerator:
         Path to the template notebook file.
     """
 
-    template_path: str
+    template_path: Path
 
     PARAMS_CELL_TAG: ClassVar[str] = "parameters"
     DONE_STATEMENT: ClassVar[str] = 'print("DONE")'
@@ -78,7 +79,7 @@ class NotebookGenerator:
         return nb_writes(notebook)
 
     def generate_and_save(
-        self, parameters_values: dict[str, Any], output_path: str
+        self, parameters_values: dict[str, Any], output_path: Path
     ) -> None:
         """
         Generate a notebook by filling in the parameters in the template and save it to

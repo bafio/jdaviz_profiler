@@ -1,8 +1,8 @@
 import csv
-import os.path as os_path
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import asdict, field, make_dataclass
+from pathlib import Path
 from statistics import mean
 from typing import Any, ClassVar
 
@@ -69,7 +69,10 @@ class Metrics(BaseMetrics):
         )
 
     def save_metrics_to_csv(
-        self, notebook_filename: str, nb_params_dict: dict[str, Any], csv_file_path: str
+        self,
+        notebook_filename: str,
+        nb_params_dict: dict[str, Any],
+        csv_file_path: Path,
     ) -> None:
         """
         Save the profiling metrics to a CSV file.
@@ -98,9 +101,9 @@ class Metrics(BaseMetrics):
             )
         ]
         # Determine if we need to write the header
-        writeheader: bool = os_path.getsize(csv_file_path) <= 0
+        writeheader: bool = csv_file_path.stat().st_size <= 0
         # Write metrics to CSV file
-        with open(csv_file_path, "a", newline="") as f:
+        with csv_file_path.open("a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=list(data[0].keys()))
             writeheader and writer.writeheader()
             writer.writerows(data)
