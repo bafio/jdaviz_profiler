@@ -72,9 +72,8 @@ def generate_and_profile(
     if log_screenshots:
         # Create the directory(ies), if not yet created, in where the screenshots
         # will be saved. e.g.: <input_dir_path>/screenshots/<YYYY_MM_DD>/
-        screenshots_dir_path: Path = input_dir_path.joinpath(
-            "screenshots",
-            strftime("%Y_%m_%d", gmtime()),
+        screenshots_dir_path: Path = (
+            input_dir_path / "screenshots" / strftime("%Y_%m_%d", gmtime())
         )
         screenshots_dir_path.mkdir(parents=True, exist_ok=True)
         profiler_context.screenshots_dir_path = screenshots_dir_path
@@ -82,9 +81,8 @@ def generate_and_profile(
     if save_metrics:
         # Create the directory(ies), if not yet created, in where the metrics
         # will be saved. e.g.: <input_dir_path>/metrics/<YYYY_MM_DD>/
-        metrics_dir_path: Path = input_dir_path.joinpath(
-            "metrics",
-            strftime("%Y_%m_%d", gmtime()),
+        metrics_dir_path: Path = (
+            input_dir_path / "metrics" / strftime("%Y_%m_%d", gmtime())
         )
         metrics_dir_path.mkdir(parents=True, exist_ok=True)
 

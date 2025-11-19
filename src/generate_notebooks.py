@@ -71,8 +71,8 @@ def generate_notebooks(input_dir_path: Path) -> list[Path]:
         nb_filename = f"{nb_filename}.ipynb"
         output_path: Path = output_dir_path / nb_filename
 
-        # Check if the output path already exists, if so remove the file
-        output_path.exists() and output_path.unlink(missing_ok=True)  # type: ignore[func-returns-value]
+        # Remove the output path if exists
+        output_path.unlink(missing_ok=True)
 
         # Generate the notebook
         notebook_generator.generate_and_save(
