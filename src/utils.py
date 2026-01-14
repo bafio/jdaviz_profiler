@@ -32,6 +32,10 @@ class ProfilerContext:
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
+    username : str
+        The username to access the JupyterLab instance.
+    password : str
+        The password to access the JupyterLab instance.
     nb_input_path : Path
         Path of the input notebook to be profiled.
     screenshots_dir_path : Path | None
@@ -50,6 +54,8 @@ class ProfilerContext:
     max_wait_time: int
     url: str = ""
     token: str = ""
+    username: str = ""
+    password: str = ""
     nb_input_path: Path = field(default_factory=Path)
     screenshots_dir_path: Path | None = field(default=None)
     notebook_metrics_file_path: Path | None = field(default=None)
@@ -60,6 +66,8 @@ class ProfilerContext:
             (
                 f"URL: {self.url}",
                 f"Token: {self.token}",
+                f"Username: {self.username}" if self.username else "",
+                f"Password: {'*' * 10}" if self.password else "",
                 f"Kernel Name: {self.kernel_name}",
                 f"Input Notebook Path: {self.nb_input_path}",
                 f"Headless: {self.headless}",

@@ -242,8 +242,28 @@ class Profiler:
         logger.info(f"Navigating to {url}")
         self.driver.get(url)
 
+        # If username and password are provided, perform login
+        if self.context.username and self.context.password:
+            self.perform_login()
+
         # Wait for the notebook to load
         self.wait_for_notebook_to_load()
+
+    def perform_login(self) -> None:
+        """
+        Perform login to the JupyterLab instance using provided credentials.
+        """
+        logger.info("Performing login...")
+
+        username_field = self.driver.find_element(By.NAME, "username")
+        password_field = self.driver.find_element(By.NAME, "password")
+        login_button = self.driver.find_element(By.ID, "login_submit")
+
+        username_field.send_keys(self.context.username)
+        password_field.send_keys(self.context.password)
+        login_button.click()
+
+        logger.info("Login successful.")
 
     def setup_network_throttling(self) -> None:
         """

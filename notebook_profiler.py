@@ -30,6 +30,20 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
+        "--username",
+        help="The username to access the JupyterLab instance.",
+        required=False,
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--password",
+        help="The password to access the JupyterLab instance.",
+        required=False,
+        type=str,
+        default="",
+    )
+    parser.add_argument(
         "--kernel_name",
         help="The name of the kernel to use for the notebook.",
         required=True,

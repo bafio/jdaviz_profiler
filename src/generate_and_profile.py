@@ -18,6 +18,8 @@ def generate_and_profile(
     input_dir_path: Path,
     url: str,
     token: str,
+    username: str,
+    password: str,
     kernel_name: str,
     headless: bool,
     max_wait_time: int,
@@ -34,6 +36,10 @@ def generate_and_profile(
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
+    username : str
+        The username to access the JupyterLab instance.
+    password : str
+        The password to access the JupyterLab instance.
     kernel_name : str
         The name of the kernel to use for the notebook.
     headless : bool
@@ -64,6 +70,8 @@ def generate_and_profile(
     profiler_context: ProfilerContext = ProfilerContext(
         url=url,
         token=token,
+        username=username,
+        password=password,
         kernel_name=kernel_name,
         headless=headless,
         max_wait_time=max_wait_time,
