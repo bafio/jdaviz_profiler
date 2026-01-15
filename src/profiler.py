@@ -244,14 +244,14 @@ class Profiler:
 
         # If username and password are provided, perform login
         if self.context.username and self.context.password:
-            self.perform_login()
+            self.login()
 
         # Wait for the notebook to load
         self.wait_for_notebook_to_load()
 
-    def perform_login(self) -> None:
+    def login(self) -> None:
         """
-        Perform login to the JupyterLab instance using provided credentials.
+        Log in to the JupyterLab instance using provided credentials.
         """
         logger.info("Performing login...")
 
