@@ -64,9 +64,12 @@ class ProfilerContext:
     cell_metrics_file_path: Path | None = field(default=None)
 
     def __post_init__(self) -> None:
-        """Load username and password from environment variables if available."""
+        """
+        Load JupyterLab username and password from environment variables if available.
+        """
         load_dotenv()
-        self.username, self.password = os.getenv("USERNAME"), os.getenv("PASSWORD")
+        self.username = os.getenv("JUPYTERLAB_USERNAME")
+        self.password = os.getenv("JUPYTERLAB_PASSWORD")
 
     def __repr__(self) -> str:
         return " -- ".join(
