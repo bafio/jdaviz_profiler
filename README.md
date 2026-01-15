@@ -93,6 +93,11 @@ pre-commit install
     - `--log_screenshots`: Whether to log screenshots or not (default: `False`, same as `--no-log_screenshots`).
     - `--save_metrics`: Whether to save profiling metrics to a CSV file (default: `False`, same as `--no-save_metrics`).
 
+The profiling scripts assume that the JupyterLab instance is already running and accessible via the provided URL and token. Additionally, if the JupyterLab instance requires authentication, the username and password can be provided via environment variables or via a `.env` file:
+```bash
+JUPYTERLAB_USERNAME=<your_username>
+JUPYTERLAB_PASSWORD=<your_password>
+```
 
 All scripts expose a `--log_level` argument to set the logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`; default is `INFO`), and a `--log_file` argument to specify a log file path (if not provided, logs will only be printed to the console).
 
@@ -108,6 +113,7 @@ All scripts have a `--help` option for more details on usage and available argum
 - `requests`
 - `nbformat`
 - `tqdm`
+- `python-dotenv`
 
 
 ## License

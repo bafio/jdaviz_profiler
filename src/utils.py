@@ -2,6 +2,7 @@ import ast
 import itertools
 import json
 import logging
+import os
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import StrEnum, unique
@@ -9,6 +10,7 @@ from pathlib import Path
 from time import sleep, time
 from typing import Any
 
+from dotenv import load_dotenv
 from nbformat import NotebookNode
 
 KILOBYTE: int = 1024
@@ -32,6 +34,10 @@ class ProfilerContext:
         The URL of the JupyterLab instance where the notebook is going to be profiled.
     token : str
         The token to access the JupyterLab instance.
+    username : str | None
+        The username to access the JupyterLab instance.
+    password : str | None
+        The password to access the JupyterLab instance.
     nb_input_path : Path
         Path of the input notebook to be profiled.
     screenshots_dir_path : Path | None
@@ -50,16 +56,28 @@ class ProfilerContext:
     max_wait_time: int
     url: str = ""
     token: str = ""
+    username: str | None = field(default=None, init=False)
+    password: str | None = field(default=None, init=False)
     nb_input_path: Path = field(default_factory=Path)
     screenshots_dir_path: Path | None = field(default=None)
     notebook_metrics_file_path: Path | None = field(default=None)
     cell_metrics_file_path: Path | None = field(default=None)
+
+    def __post_init__(self) -> None:
+        """
+        Load JupyterLab username and password from environment variables if available.
+        """
+        load_dotenv()
+        self.username = os.getenv("JUPYTERLAB_USERNAME")
+        self.password = os.getenv("JUPYTERLAB_PASSWORD")
 
     def __repr__(self) -> str:
         return " -- ".join(
             (
                 f"URL: {self.url}",
                 f"Token: {self.token}",
+                f"Username: {self.username}" if self.username else "",
+                f"Password: {'*' * 10}" if self.password else "",
                 f"Kernel Name: {self.kernel_name}",
                 f"Input Notebook Path: {self.nb_input_path}",
                 f"Headless: {self.headless}",

@@ -70,6 +70,7 @@ pip-wheel-metadata
 # Environments
 /env*
 /*venv
+.env
 
 # Jupyter Notebooks
 */notebooks/*.ipynb
