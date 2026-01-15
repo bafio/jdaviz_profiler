@@ -15,7 +15,7 @@ from chromedriver_py import binary_path  # type: ignore[import-untyped]
 from nbformat import NO_CONVERT, NotebookNode
 from nbformat import read as nb_read
 from PIL import Image
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver import Chrome, ChromeOptions, ChromeService
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
@@ -242,22 +242,31 @@ class Profiler:
         logger.info(f"Navigating to {url}")
         self.driver.get(url)
 
-        # If username and password are provided, perform login
-        if self.context.username and self.context.password:
-            self.login()
+        # Login if authentication is required
+        self.login()
 
         # Wait for the notebook to load
         self.wait_for_notebook_to_load()
 
     def login(self) -> None:
         """
-        Log in to the JupyterLab instance using provided credentials.
+        Log in to the JupyterLab instance using provided credentials if authentication
+        is required.
         """
         logger.info("Performing login...")
 
-        username_field = self.driver.find_element(By.NAME, "username")
-        password_field = self.driver.find_element(By.NAME, "password")
-        login_button = self.driver.find_element(By.ID, "login_submit")
+        try:
+            username_field = self.driver.find_element(By.NAME, "username")
+            password_field = self.driver.find_element(By.NAME, "password")
+            login_button = self.driver.find_element(By.ID, "login_submit")
+        except NoSuchElementException:
+            logger.info("No login required.")
+            return
+
+        if self.context.username is None or self.context.password is None:
+            raise Exception(
+                "Username and/or password not provided for login to JupyterLab."
+            )
 
         username_field.send_keys(self.context.username)
         password_field.send_keys(self.context.password)

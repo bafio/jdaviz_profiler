@@ -108,6 +108,7 @@ All scripts have a `--help` option for more details on usage and available argum
 - `requests`
 - `nbformat`
 - `tqdm`
+- `python-dotenv`
 
 
 ## License

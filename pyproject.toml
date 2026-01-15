@@ -16,6 +16,7 @@ dependencies = [
     "requests",
     "nbformat",
     "tqdm",
+    "python-dotenv",
 ]
 dynamic = ["version"]
 
