@@ -13,7 +13,7 @@ PARAMS_FILENAME: str = "params.json"
 OUTPUT_DIR_PATH: str = "notebooks"
 
 
-def generate_notebooks(input_dir_path: Path) -> list[Path]:
+def generate_notebooks(input_dir_path: Path, kernel_name: str) -> list[Path]:
     """
     Generate the parameterized notebooks from a template.ipynb and params.json, and
     save them to the "notebooks" directory.
@@ -21,6 +21,12 @@ def generate_notebooks(input_dir_path: Path) -> list[Path]:
     ----------
     input_dir_path : Path
         Path to the directory containing the template.ipynb and params.json files.
+    kernel_name : str
+        The name of the kernel to use for the generated notebooks.
+    Returns
+    -------
+    list[Path]
+        A list of paths to the generated notebooks.
     Raises
     ------
     FileNotFoundError
@@ -60,7 +66,9 @@ def generate_notebooks(input_dir_path: Path) -> list[Path]:
     logger.info("Generating profiler notebooks...")
 
     # Initialize the NotebookGenerator
-    notebook_generator = NotebookGenerator(template_path=template_path)
+    notebook_generator = NotebookGenerator(
+        template_path=template_path, kernel_name=kernel_name
+    )
     nb_base_filename: str = input_dir_path.stem
     output_paths: list[Path] = []
     for parameters_values in parameters_combinations:

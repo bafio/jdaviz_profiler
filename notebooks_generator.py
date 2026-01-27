@@ -30,6 +30,13 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
+        "--kernel_name",
+        help="The name of the kernel to use for the generated notebooks.",
+        required=False,
+        type=str,
+        default="python3",
+    )
+    parser.add_argument(
         "--log_level",
         help="Set the logging level (default: INFO).",
         required=False,

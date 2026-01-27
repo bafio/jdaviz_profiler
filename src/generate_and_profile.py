@@ -58,7 +58,9 @@ def generate_and_profile(
     )
 
     # Generate notebooks from template
-    nb_input_paths: list[Path] = generate_notebooks(input_dir_path=input_dir_path)
+    nb_input_paths: list[Path] = generate_notebooks(
+        input_dir_path=input_dir_path, kernel_name=kernel_name
+    )
 
     # Set up the partial context for the `profile_notebook` call
     profiler_context: ProfilerContext = ProfilerContext(

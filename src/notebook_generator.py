@@ -26,9 +26,12 @@ class NotebookGenerator:
     ----------
     template_path : str
         Path to the template notebook file.
+    kernel_name : str
+        The name of the kernel to use for the generated notebooks.
     """
 
     template_path: Path
+    kernel_name: str
 
     PARAMS_CELL_TAG: ClassVar[str] = "parameters"
     DONE_STATEMENT: ClassVar[str] = 'print("DONE")'
@@ -64,6 +67,12 @@ class NotebookGenerator:
             The raw content of the preprocessed notebook template.
         """
         notebook = nb_read(self.template_path, NO_CONVERT)
+        notebook.metadata.kernelspec = {
+            "name": self.kernel_name,
+            "language": "python",
+            "display_name": self.kernel_name,
+        }
+        # Retain only code cells
         notebook.cells = [cell for cell in notebook.cells if cell.cell_type == "code"]
         for cell in notebook.cells:
             # Clear the outputs
