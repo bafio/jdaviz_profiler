@@ -69,6 +69,16 @@ pre-commit install
 
 ## Usage
 
+- The main scripts provided are:
+    - `create_new_usecase.py`: Creates a new usecase directory with a template notebook and params file.
+    - `notebooks_generator.py`: Generates notebooks from a usecase.
+    - `notebook_profiler.py`: Profiles a specific notebook.
+    - `generate_and_profile.py`: Generates all possible notebooks from a usecase and profiles all of them.
+- Example usecases are provided in the `usecases/` directory.
+- Create a new usecase:
+    ```bash
+    ./create_new_usecase.py --name <new usecase name>
+    ```
 - Generate all possible notebooks from a usecase:
     ```bash
     ./notebooks_generator.py --input_dir_path <usecase path>
