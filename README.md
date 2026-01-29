@@ -73,6 +73,8 @@ pre-commit install
     ```bash
     ./notebooks_generator.py --input_dir_path <usecase path>
     ```
+    Additional arguments:
+    - `--kernel_name`: Name of the kernel to be set in the generated notebooks (default: `python3`).
 - Profile a specific notebook:
     ```bash
     ./notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>
