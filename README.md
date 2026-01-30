@@ -20,9 +20,9 @@ The `template.ipynb` must have a cell with placeholders for the parameters to be
 
 Each parameter in the params.json file must have a corresponding placeholder in the template.ipynb file, and the placeholders must be unique having `_value` as suffix, e.g. `image_pixel_side_value` or `viewport_pixel_size_value` correspond to `image_pixel_side` or `viewport_pixel_size` parameter value used in the `template.ipynb`.
 
-The generated parameterized notebooks will be saved in the `<usecase path>/notebooks` directory.
+The generated parameterized notebooks will be saved in the `usecases/<usecase path>/notebooks` directory.
 
-An example of how to structure a new `<usecase>` (along with `template.ipynb` and `params.json` files) is provided in this repository in `imviz_images`.
+An example of how to structure a new `<usecase>` (along with `template.ipynb` and `params.json` files) is provided in this repository in `usecases/imviz_images`.
 
 ### Notebook Profiling:
 
