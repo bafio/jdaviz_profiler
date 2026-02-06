@@ -20,9 +20,9 @@ The `template.ipynb` must have a cell with placeholders for the parameters to be
 
 Each parameter in the params.json file must have a corresponding placeholder in the template.ipynb file, and the placeholders must be unique having `_value` as suffix, e.g. `image_pixel_side_value` or `viewport_pixel_size_value` correspond to `image_pixel_side` or `viewport_pixel_size` parameter value used in the `template.ipynb`.
 
-The generated parameterized notebooks will be saved in the `<usecase path>/notebooks` directory.
+The generated parameterized notebooks will be saved in the `usecases/<usecase path>/notebooks` directory.
 
-An example of how to structure a new `<usecase>` (along with `template.ipynb` and `params.json` files) is provided in this repository in `imviz_images`.
+An example of how to structure a new `<usecase>` (along with `template.ipynb` and `params.json` files) is provided in this repository in `usecases/imviz_images`.
 
 ### Notebook Profiling:
 
@@ -69,10 +69,22 @@ pre-commit install
 
 ## Usage
 
+- The main scripts provided are:
+    - `create_new_usecase.py`: Creates a new usecase directory with a template notebook and params file.
+    - `notebooks_generator.py`: Generates notebooks from a usecase.
+    - `notebook_profiler.py`: Profiles a specific notebook.
+    - `generate_and_profile.py`: Generates all possible notebooks from a usecase and profiles all of them.
+- Example usecases are provided in the `usecases/` directory.
+- Create a new usecase:
+    ```bash
+    ./create_new_usecase.py --name <new usecase name>
+    ```
 - Generate all possible notebooks from a usecase:
     ```bash
     ./notebooks_generator.py --input_dir_path <usecase path>
     ```
+    Additional arguments:
+    - `--kernel_name`: Name of the kernel to be set in the generated notebooks (default: `python3`).
 - Profile a specific notebook:
     ```bash
     ./notebook_profiler.py --url <JupyterLab URL> --token <API Token> --kernel_name <kernel name> --nb_input_path <notebook path>

@@ -48,6 +48,8 @@ if __name__ == "__main__":
         "--headless",
         help="Whether to run in headless mode (default: False).",
         action=argparse.BooleanOptionalAction,
+        required=False,
+        type=bool,
         default=False,
     )
     parser.add_argument(
@@ -61,12 +63,16 @@ if __name__ == "__main__":
         "--log_screenshots",
         help="Whether to log screenshots or not (default: False).",
         action=argparse.BooleanOptionalAction,
+        required=False,
+        type=bool,
         default=False,
     )
     parser.add_argument(
         "--save_metrics",
         help="Whether to save profiling metrics to a CSV file (default: False).",
         action=argparse.BooleanOptionalAction,
+        required=False,
+        type=bool,
         default=False,
     )
     parser.add_argument(

@@ -45,6 +45,8 @@ if __name__ == "__main__":
         "--headless",
         help="Whether to run in headless mode (default: False).",
         action=argparse.BooleanOptionalAction,
+        required=False,
+        type=bool,
         default=False,
     )
     parser.add_argument(

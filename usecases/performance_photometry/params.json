@@ -1,0 +1,7 @@
+{
+  "viewport_pixel_size_value": [600, 1000, 2000, 4000],
+  "image_compression_value": ["png", "webp", "none"],
+  "gwcs_to_fits_sip_value": [true, false],
+  "n_subsets_value": [1, 2, 3, 4, 5],
+  "ui_network_throttling_value": [-1]
+}
