@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+"""
+Create a new directory with an example template notebook and a
+parameters file that can be filled-in to run a new profiling
+"use case" (a new combination of example notebook and parameters).
+"""
+
 import argparse
 import json
 import shutil
